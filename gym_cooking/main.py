@@ -12,7 +12,8 @@ import random
 import argparse
 from collections import namedtuple
 
-import gymnasium as gym
+import gym
+from gym.envs.registration import register
 
 
 def parse_arguments():
@@ -21,7 +22,7 @@ def parse_arguments():
     # Environment
     parser.add_argument("--level", type=str, required=True)
     parser.add_argument("--num-agents", type=int, required=True)
-    parser.add_argument("--max-num-timesteps", type=int, default=100, help="Max number of timesteps to run")
+    parser.add_argument("--max-num-timesteps", type=int, default=1, help="Max number of timesteps to run")
     parser.add_argument("--max-num-subtasks", type=int, default=14, help="Max number of subtasks for recipe")
     parser.add_argument("--seed", type=int, default=1, help="Fix pseudorandom seed")
     parser.add_argument("--with-image-obs", action="store_true", default=False, help="Return observations as images (instead of objects)")
@@ -85,23 +86,28 @@ def initialize_agents(arglist):
 def main_loop(arglist):
     """The main loop for running experiments."""
     print("Initializing environment and agents.")
-    env = gym.envs.make("overcookedEnv-v0")
-    obs = env.reset()
+    env = gym.envs.make("overcookedEnv-v0", arglist=arglist)
+    env_reset = env.reset()
+    
     # game = GameVisualize(env)
     real_agents = initialize_agents(arglist=arglist)
+    print("Initialized agents")
 
     # Info bag for saving pkl files
     bag = Bag(arglist=arglist, filename=env.filename)
     bag.set_recipe(recipe_subtasks=env.all_subtasks)
 
+    print("Set Recipe")
+
+
     while not env.done():
         action_dict = {}
 
         for agent in real_agents:
-            action = agent.select_action(obs=obs)
+            action = agent.select_action(obs=env_reset)
             action_dict[agent.name] = action
-
-        obs, reward, done, info = env.step(action_dict=action_dict)
+        
+        env_reset, reward, done, info = env.step(action_dict)
 
         # Agents
         for agent in real_agents:
@@ -118,19 +124,13 @@ def main_loop(arglist):
 
 if __name__ == '__main__':
     arglist = parse_arguments()
-    env_spec = gym.registry.get('overcookedEnv-v0')
-    print(env_spec)
-    if(env_spec==None): 
-        gym.register(
-            id='overcookedEnv-v0',
-            entry_point='envs:OvercookedEnvironment',
-            kwargs=vars(arglist)
+    register(
+        id="overcookedEnv-v0",
+        entry_point="envs:OvercookedEnvironment",
         )
 
-    env_spec = gym.registry.get('overcookedEnv-v0')
-    print(env_spec)
     if arglist.play:
-        env = gym.envs.make("overcookedEnv-v0", kwargs=arglist)
+        env = gym.envs.make("overcookedEnv-v0", arglist=arglist)
         env.reset()
         game = GamePlay(env.filename, env.world, env.sim_agents)
         game.on_execute()
@@ -140,5 +140,3 @@ if __name__ == '__main__':
             model_types))) == arglist.num_agents, "num_agents should match the number of models specified"
         fix_seed(seed=arglist.seed)
         main_loop(arglist=arglist)
-
-

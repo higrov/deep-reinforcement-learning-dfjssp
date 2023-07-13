@@ -17,34 +17,28 @@ from utils.agent import SimAgent
 from misc.game.gameimage import GameImage
 from utils.agent import COLORS
 
+import os
 import copy
 import networkx as nx
 import numpy as np
 from itertools import combinations, permutations, product
 from collections import namedtuple
 
-import gymnasium as gym
-from gymnasium import error, spaces, utils
-from gymnasium.utils import seeding
+import gym
+from gym import error, spaces, utils
+from gym.utils import seeding
 
 
 CollisionRepr = namedtuple("CollisionRepr", "time agent_names agent_locations")
-# Define the number of custom actions
-num_actions = 4
 
-# Define the action space
-action_space = gym.spaces.Discrete(num_actions)
 
 class OvercookedEnvironment(gym.Env):
     """Environment object for Overcooked."""
 
-    def __init__(self, level,num_agents, max_num_timesteps,max_num_subtasks,seed,with_image_obs,beta,alpha,
-                 tau,cap,main_cap,play,record,model1,model2,model3,model4):
-        self.arglist = gym.registry.get('overcookedEnv-v0').kwargs
-        print(self.arglist)
+    def __init__(self, arglist):
+        self.arglist = arglist
         self.t = 0
         self.set_filename()
-        self.action_space=action_space
 
         # For visualizing episode.
         self.rep = []
@@ -53,6 +47,17 @@ class OvercookedEnvironment(gym.Env):
         self.collisions = []
         self.termination_info = ""
         self.successful = False
+        
+        # Add obs and action space to better match
+        # OpenAI Gym's formalism
+        self.observation_space = spaces.Box(
+            low=0,
+            high=255,
+            shape=(560, 560, 3), # By default
+            dtype="uint8"
+        )
+
+        self.action_space = spaces.Discrete(4)
 
     def get_repr(self):
         return self.world.get_repr() + tuple([agent.get_repr() for agent in self.sim_agents])
@@ -82,23 +87,24 @@ class OvercookedEnvironment(gym.Env):
         return new_env
 
     def set_filename(self):
-        self.filename = "{}_agents{}_seed{}".format(self.arglist['level'],\
-            self.arglist['num_agents'], self.arglist['seed'])
+        self.filename = "{}_agents{}_seed{}".format(self.arglist.level,\
+            self.arglist.num_agents, self.arglist.seed)
         model = ""
-        if self.arglist['model1'] is not None:
-            model += "_model1-{}".format(self.arglist['model1'])
-        if self.arglist['model2'] is not None:
-            model += "_model2-{}".format(self.arglist['model2'])
-        if self.arglist['model3'] is not None:
-            model += "_model3-{}".format(self.arglist['model3'])
-        if self.arglist['model4'] is not None:
-            model += "_model4-{}".format(self.arglist['model4'])
+        if self.arglist.model1 is not None:
+            model += "_model1-{}".format(self.arglist.model1)
+        if self.arglist.model2 is not None:
+            model += "_model2-{}".format(self.arglist.model2)
+        if self.arglist.model3 is not None:
+            model += "_model3-{}".format(self.arglist.model3)
+        if self.arglist.model4 is not None:
+            model += "_model4-{}".format(self.arglist.model4)
         self.filename += model
 
     def load_level(self, level, num_agents):
         x = 0
         y = 0
-        with open('utils/levels/{}.txt'.format(level), 'r') as file:
+        dir_path = os.path.dirname(os.path.realpath(__file__))
+        with open('{}/../utils/levels/{}.txt'.format(dir_path, level), 'r') as file:
             # Mark the phases of reading.
             phase = 1
             for line in file:
@@ -146,6 +152,7 @@ class OvercookedEnvironment(gym.Env):
         self.world.height = y
         self.world.perimeter = 2*(self.world.width + self.world.height)
 
+
     def reset(self):
         self.world = World(arglist=self.arglist)
         self.recipes = []
@@ -171,6 +178,12 @@ class OvercookedEnvironment(gym.Env):
         self.cache_distances()
         self.obs_tm1 = copy.copy(self)
 
+        self.game = GameImage(
+                    filename=self.filename,
+                    world=self.world,
+                    sim_agents=self.sim_agents)
+        self.game.on_init()
+
         if self.arglist.record or self.arglist.with_image_obs:
             self.game = GameImage(
                     filename=self.filename,
@@ -181,6 +194,7 @@ class OvercookedEnvironment(gym.Env):
             if self.arglist.record:
                 self.game.save_image_obs(self.t)
 
+        #return self.game.get_image_obs()
         return copy.copy(self)
 
     def close(self):
@@ -189,9 +203,9 @@ class OvercookedEnvironment(gym.Env):
     def step(self, action_dict):
         # Track internal environment info.
         self.t += 1
-        print("===============================")
-        print("[environment.step] @ TIMESTEP {}".format(self.t))
-        print("===============================")
+        # print("===============================")
+        # print("[environment.step] @ TIMESTEP {}".format(self.t))
+        # print("===============================")
 
         # Get actions.
         for sim_agent in self.sim_agents:
@@ -206,20 +220,23 @@ class OvercookedEnvironment(gym.Env):
 
         # Visualize.
         self.display()
-        self.print_agents()
+        # self.print_agents()
         if self.arglist.record:
             self.game.save_image_obs(self.t)
 
         # Get a plan-representation observation.
+        #new_obs = self.game.get_image_obs() # TODO: more flexible representation returning method ?
         new_obs = copy.copy(self)
-        # Get an image observation
-        image_obs = self.game.get_image_obs()
 
         done = self.done()
         reward = self.reward()
-        info = {"t": self.t, "obs": new_obs,
-                "image_obs": image_obs,
+        info = {"t": self.t, "obs": new_obs, "real_done": self.successful,
                 "done": done, "termination_info": self.termination_info}
+
+        # Get an image observation
+        if self.arglist.with_image_obs:
+            info["image_obs"] = self.game.get_image_obs()
+
         return new_obs, reward, done, info
 
 
@@ -259,7 +276,7 @@ class OvercookedEnvironment(gym.Env):
 
     def display(self):
         self.update_display()
-        print(str(self))
+        # print(str(self))
 
     def update_display(self):
         self.rep = self.world.update_display()
@@ -277,7 +294,7 @@ class OvercookedEnvironment(gym.Env):
         # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions
         subtasks = self.sw.get_subtasks(max_path_length=self.arglist.max_num_subtasks)
         all_subtasks = [subtask for path in subtasks for subtask in path]
-        print('Subtasks:', all_subtasks, '\n')
+        # print('Subtasks:', all_subtasks, '\n')
         return all_subtasks
 
     def get_AB_locs_given_objs(self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj):
@@ -426,13 +443,13 @@ class OvercookedEnvironment(gym.Env):
                         agent_locations=[agent_i.location, agent_j.location])
                 self.collisions.append(collision)
 
-        print('\nexecute array is:', execute)
+        # print('\nexecute array is:', execute)
 
         # Update agents' actions if collision was detected.
         for i, agent in enumerate(self.sim_agents):
             if not execute[i]:
                 agent.action = (0, 0)
-            print("{} has action {}".format(color(agent.name, agent.color), agent.action))
+            # print("{} has action {}".format(color(agent.name, agent.color), agent.action))
 
     def execute_navigation(self):
         for agent in self.sim_agents:

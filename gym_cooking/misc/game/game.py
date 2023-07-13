@@ -1,11 +1,16 @@
 import os
 import pygame
+import pathlib
 import numpy as np
 from utils.core import *
 from misc.game.utils import *
 
-graphics_dir = 'misc/game/graphics'
+dirname = pathlib.Path(__file__).parent.absolute()
+graphics_dir = f"{dirname}/graphics"
 _image_library = {}
+
+# Disable sound dependency
+pygame.mixer.quit()
 
 def get_image(path):
     global _image_library
