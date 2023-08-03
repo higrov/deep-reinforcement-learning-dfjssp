@@ -1,0 +1,94 @@
+# command: python main.py --config evaluation/1x3
+# RunInfo:
+run-id: MAPPO-EVAL-2x3-ADHOC-UP # for identifying in logs and in folders etc
+continue-run: false # continue training from previous run
+notes: Evaluating MAPPO-2x3-FINAL on 2x3 layouts - UP
+tags: eval, 2x3, FINAL # comma separated list of tags for this run
+
+model2: up
+# Environment:
+# level_types = (open-divider, partial-divider, full-divider, cross-divider, block-divider, ring-divider)
+level: open-divider_salad, partial-divider_salad, full-divider_salad, block-divider_salad, ring-divider_salad  # level file txt
+num-agents: 2
+num-orders: 1
+max-num-timesteps: 100 # quit after this many timesteps
+max-num-subtasks: 14
+seed: 1
+device: cuda
+# Environment Switches
+record: false
+randomize: true
+
+# Mode:
+play: false
+train: false
+evaluate: true
+sweep: false
+
+# Agents:
+# Model type for agent (seac, ppo, bd, up, dc, fb, or greedy) must match num-agents
+model1: mappo
+model1-path: agents-2/orders-3/model1-mappo_model2-mappo/MAPPO-2-3-FINAL-1675238860/mappo_10000000.tar.xz
+#Model files -- to load pretrained models (only works for rl and --evaluate mode)
+#model1-path: # path to model file
+#model2-path: 
+#model3-path: 
+#model4-path:
+
+# Training Parameters:
+num-processes: 1 # number of parallel environments
+#- HyperParameters - MAPPO:
+share-policy: true
+use-centralized-v: true
+hidden-size: 64
+num-mlp-hidden-layers: 3
+use-popart: true
+use-valuenorm: false
+use-featurenorm: true
+use-naive-recurrent-policy: true
+use-recurrent-policy: true
+num-rnn-hidden-layers: 4
+rnn-data-length: 10
+lr: 0.0003
+critic-lr: 0.0001
+adam-eps: 0.000001
+num-epoch: 10
+clip-range: 0.3
+batch-size: 4
+entropy-coef: 0.01
+value-loss-coef: 1.0
+max-grad-norm: 0.5
+use-gae: true
+gamma: 0.99
+gae-lambda: 0.95
+
+# HyperParameters - PPO:
+#batch-size: 32
+#lr: 0.001
+#gamma: 0.99
+#gae-lambda: 0.95
+#clip-range: 0.05
+#entropy-coef: 0.1
+#value-loss-coef: 0.1
+#max-grad-norm: 0.5
+
+
+# HyperParameters - SEAC (Shared Experience Actor Critic):
+#lr: 0.0009
+#adam-eps: 0.001
+#use_gae: false
+#gamma: 0.95
+#gae-lambda: 0.95
+#entropy-coef: 0.05
+#value-loss_coef: 0.5
+seac-coef: 1.0
+#max-grad-norm: 0.5
+
+# HyperParameters - Bayesian Delegation:
+#### Delegation Planner
+beta: 1.3
+#### Navigation Planner
+alpha: 0.02
+tau: 2
+cap: 50
+main-cap: 75

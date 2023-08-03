@@ -2,8 +2,6 @@ import recipe_planner.utils as recipe
 from delegation_planner.delegator import Delegator
 from delegation_planner.utils import SubtaskAllocDistribution
 from navigation_planner.utils import get_subtask_obj, get_subtask_action_obj, get_single_actions
-from utils.interact import interact
-from utils.utils import agent_settings
 
 from collections import defaultdict, namedtuple
 from itertools import permutations, product, combinations
@@ -17,7 +15,7 @@ SubtaskAllocation = namedtuple("SubtaskAllocation", "subtask subtask_agent_names
 class BayesianDelegator(Delegator):
 
     def __init__(self, agent_name, all_agent_names,
-            model_type, planner, none_action_prob):
+            model_type, planner, none_action_probs):
         """Initializing Bayesian Delegator for agent_name.
 
         Args:
@@ -36,7 +34,8 @@ class BayesianDelegator(Delegator):
         self.model_type = model_type
         self.priors = 'uniform' if model_type == 'up' else 'spatial'
         self.planner = planner
-        self.none_action_prob = none_action_prob
+        self.none_action_prob = none_action_probs
+
 
     def should_reset_priors(self, obs, incomplete_subtasks):
         """Returns whether priors should be reset.
@@ -58,8 +57,7 @@ class BayesianDelegator(Delegator):
         # Get currently available subtasks.
         self.incomplete_subtasks = incomplete_subtasks
         probs = self.get_subtask_alloc_probs()
-        probs = self.prune_subtask_allocs(
-                observation=obs, subtask_alloc_probs=probs)
+        probs = self.prune_subtask_allocs(obs=obs, subtask_alloc_probs=probs)
         # Compare previously available subtasks with currently available subtasks.
         return not(len(self.probs.enumerate_subtask_allocs()) == len(probs.enumerate_subtask_allocs()))
 
@@ -74,15 +72,19 @@ class BayesianDelegator(Delegator):
             probs = self.add_subtasks()
         return probs
 
+    
     def subtask_alloc_is_doable(self, env, subtask, subtask_agent_names):
         """Return whether subtask allocation (subtask x subtask_agent_names) is doable
         in the current environment state."""
         # Doing nothing is always possible.
         if subtask is None:
             return True
-        agent_locs = [agent.location for agent in list(filter(lambda a: a.name in subtask_agent_names, env.sim_agents))]
+
+        agent_locs = tuple(agent.location for agent in env.sim_agents if agent.name in subtask_agent_names)
+        
         start_obj, goal_obj = get_subtask_obj(subtask=subtask)
         subtask_action_obj = get_subtask_action_obj(subtask=subtask)
+        # start location, goal location
         A_locs, B_locs = env.get_AB_locs_given_objs(
                 subtask=subtask,
                 subtask_agent_names=subtask_agent_names,
@@ -90,8 +92,8 @@ class BayesianDelegator(Delegator):
                 goal_obj=goal_obj,
                 subtask_action_obj=subtask_action_obj)
         distance = env.world.get_lower_bound_between(
-                subtask=subtask,
-                agent_locs=tuple(agent_locs),
+                subtask_name=subtask.name,
+                agent_locs=agent_locs,
                 A_locs=tuple(A_locs),
                 B_locs=tuple(B_locs))
         # Subtask allocation is doable if it's reachable between agents and subtask objects.
@@ -107,17 +109,18 @@ class BayesianDelegator(Delegator):
                 subtask=subtask,
                 subtask_agent_names=subtask_agent_names,
                 other_agent_planners={})
-        value = self.planner.v_l[(self.planner.cur_state.get_repr(), subtask)]
-        return value
+        rep = self.planner.repr_mapper(self.planner.cur_state.get_repr())
+        return self.planner.v_l[(subtask.name, subtask.args, rep)]
+    
 
-    def prune_subtask_allocs(self, observation, subtask_alloc_probs):
+    def prune_subtask_allocs(self, obs, subtask_alloc_probs):
         """Removing subtask allocs from subtask_alloc_probs that are
         infeasible or where multiple agents are doing None together."""
         for subtask_alloc in subtask_alloc_probs.enumerate_subtask_allocs():
             for t in subtask_alloc:
                 # Remove unreachable/undoable subtask subtask_allocations.
                 if not self.subtask_alloc_is_doable(
-                        env=observation,
+                        env=obs,
                         subtask=t.subtask,
                         subtask_agent_names=t.subtask_agent_names):
                     subtask_alloc_probs.delete(subtask_alloc)
@@ -133,14 +136,14 @@ class BayesianDelegator(Delegator):
 
         return subtask_alloc_probs
 
+
     def set_priors(self, obs, incomplete_subtasks, priors_type):
         """Setting the prior probabilities for subtask allocations."""
-        print('{} setting priors'.format(self.agent_name))
+        print(f'{self.agent_name} setting priors')
         self.incomplete_subtasks = incomplete_subtasks
 
         probs = self.get_subtask_alloc_probs()
-        probs = self.prune_subtask_allocs(
-                observation=obs, subtask_alloc_probs=probs)
+        probs = self.prune_subtask_allocs(obs=obs, subtask_alloc_probs=probs)
         probs.normalize()
 
         if priors_type == 'spatial':
@@ -151,8 +154,7 @@ class BayesianDelegator(Delegator):
 
         self.ensure_at_least_one_subtask()
         self.probs.normalize()
-
-
+        
     def get_spatial_priors(self, obs, some_probs):
         """Setting prior probabilities w.r.t spatial metrics."""
         # Weight inversely by distance.
@@ -166,9 +168,8 @@ class BayesianDelegator(Delegator):
                         subtask=t.subtask,
                         subtask_agent_names=t.subtask_agent_names))
             # Weight by number of nonzero subtasks.
-            some_probs.update(
-                    subtask_alloc=subtask_alloc,
-                    factor=len(t)**2. * total_weight)
+            some_probs.update(subtask_alloc=subtask_alloc, factor=len(t)**2. * total_weight)
+
         return some_probs
 
     def get_other_agent_planners(self, obs, backup_subtask):
@@ -191,10 +192,7 @@ class BayesianDelegator(Delegator):
 
                 # Assume your planner for other agents with the right settings.
                 planner = copy.copy(self.planner)
-                planner.set_settings(env=copy.copy(obs),
-                                     subtask=subtask,
-                                     subtask_agent_names=subtask_agent_names
-                                     )
+                planner.set_settings(env=copy.copy(obs), subtask=subtask, subtask_agent_names=subtask_agent_names)
                 planners[other_agent_name] = planner
         return planners
 
@@ -233,7 +231,7 @@ class BayesianDelegator(Delegator):
             A float probability update of whether agents in subtask_agent_names are
             performing subtask.
         """
-        print("[BayesianDelgation.prob_nav_actions] Calculating probs for subtask {} by {}".format(str(subtask), ' & '.join(subtask_agent_names)))
+        #print("[BayesianDelgation.prob_nav_actions] Calculating probs for subtask {} by {}".format(str(subtask), ' & '.join(subtask_agent_names)))
         assert len(subtask_agent_names) == 1 or len(subtask_agent_names) == 2
 
         # Perform inference over None subtasks.
@@ -266,7 +264,7 @@ class BayesianDelegator(Delegator):
                 value_f=self.planner.v_l)
 
         # Collect actions the agents could have taken in obs_tm1.
-        valid_nav_actions = self.planner.get_actions(state_repr=obs_tm1.get_repr())
+        valid_nav_actions = self.planner.get_actions(state_repr=self.planner.repr_mapper(obs_tm1.get_repr()))
 
         # Check action taken is in the list of actions available to agents in obs_tm1.
         assert action in valid_nav_actions, "valid_nav_actions: {}\nlocs: {}\naction: {}".format(
@@ -329,7 +327,7 @@ class BayesianDelegator(Delegator):
             if len(remaining_subtasks) > 1:
                 for ts in permutations(remaining_subtasks, 2):
                     new_subtask_alloc = base_subtask_alloc + [SubtaskAllocation(subtask=ts[0], subtask_agent_names=(remaining_agents[0], )),
-                                                   SubtaskAllocation(subtask=ts[1], subtask_agent_names=(remaining_agents[1], )),]
+                    SubtaskAllocation(subtask=ts[1], subtask_agent_names=(remaining_agents[1], )),]
                     other_subtask_allocs.append(new_subtask_alloc)
             return other_subtask_allocs
 
@@ -338,22 +336,22 @@ class BayesianDelegator(Delegator):
         subtask_allocs = []
 
         subtasks = self.incomplete_subtasks
+        
         # Just one agent: Assign itself to all subtasks.
         if len(self.all_agent_names) == 1:
             for t in subtasks:
                 subtask_alloc = [SubtaskAllocation(subtask=t, subtask_agent_names=tuple(self.all_agent_names))]
-
                 subtask_allocs.append(subtask_alloc)
         else:
             for first_agents in combinations(self.all_agent_names, 2):
+                remaining_agents = sorted(list(set(self.all_agent_names) - set(first_agents)))
                 # Temporarily add Nones, to allow agents to be allocated no subtask.
                 # Later, we filter out allocations where all agents are assigned to None.
                 subtasks_temp = subtasks + [None for _ in range(len(self.all_agent_names) - 1)]
                 # Cooperative subtasks (same subtask assigned to agents).
                 for t in subtasks_temp:
                     subtask_alloc = [SubtaskAllocation(subtask=t, subtask_agent_names=tuple(first_agents))]
-                    remaining_agents = sorted(list(set(self.all_agent_names) - set(first_agents)))
-                    remaining_subtasks = list(set(subtasks_temp) - set([t]))
+                    remaining_subtasks = list(set(subtasks_temp) - {t})
                     subtask_allocs += self.get_other_subtask_allocations(
                             remaining_agents=remaining_agents,
                             remaining_subtasks=remaining_subtasks,
@@ -364,7 +362,7 @@ class BayesianDelegator(Delegator):
                         subtask_alloc = [
                                 SubtaskAllocation(subtask=ts[0], subtask_agent_names=(first_agents[0],)),
                                 SubtaskAllocation(subtask=ts[1], subtask_agent_names=(first_agents[1],)),]
-                        remaining_agents = sorted(list(set(self.all_agent_names) - set(first_agents)))
+                        
                         remaining_subtasks = list(set(subtasks_temp) - set(ts))
                         subtask_allocs += self.get_other_subtask_allocations(
                                 remaining_agents=remaining_agents,
@@ -464,5 +462,5 @@ class BayesianDelegator(Delegator):
             self.probs.update(
                     subtask_alloc=subtask_alloc,
                     factor=update)
-            print("UPDATING: subtask_alloc {} by {}".format(subtask_alloc, update))
+            #print("UPDATING: subtask_alloc {} by {}".format(subtask_alloc, update))
         self.probs.normalize()

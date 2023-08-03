@@ -1,6 +1,3 @@
-from itertools import combinations
-from collections import defaultdict
-
 import copy
 import networkx as nx
 import matplotlib.pyplot as plt
@@ -31,6 +28,7 @@ class NoPredicate(Predicate):
     def __init__(self, obj=None):
         self.name = None
         self.args = (None,)
+        self.state_encoding = 0
 
     def __str__(self):
         return 'None'
@@ -38,22 +36,25 @@ class NoPredicate(Predicate):
 class Fresh(Predicate):
     def __init__(self, obj):
         Predicate.__init__(self, 'Fresh', (obj,))
+        self.state_encoding = 1
 
 class Chopped(Predicate):
     def __init__(self, obj):
         Predicate.__init__(self, 'Chopped', (obj,))
+        self.state_encoding = 2
 
 class Cooked(Predicate):
     def __init__(self, obj):
         Predicate.__init__(self, 'Cooked', (obj,))
-
-class Delivered(Predicate):
-    def __init__(self, obj):
-        Predicate.__init__(self, 'Delivered', (obj,))
-
+        self.state_encoding = 3
 class Merged(Predicate):
     def __init__(self, obj):
         Predicate.__init__(self, 'Merged', (obj,))
+        self.state_encoding = 4
+class Delivered(Predicate):
+    def __init__(self, obj):
+        Predicate.__init__(self, 'Delivered', (obj,))
+        self.state_encoding = 5
 
 
 
@@ -113,7 +114,7 @@ Post: Fresh(X)
 '''
 class Get(Action):
     def __init__(self, obj, pre=None, post_add=None):
-        self.args = (obj,)   #('Tomato')
+        self.args = (obj,)   
 
         self.pre_default = [NoPredicate()]
         self.post_add_default = [Fresh(obj), NoPredicate()]

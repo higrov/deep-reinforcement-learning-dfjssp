@@ -1,6 +1,11 @@
-from gym.envs.registration import register
+from gymnasium.envs.registration import register
 
 register(
         id="overcookedEnv-v0",
-        entry_point="gym_cooking.envs:OvercookedEnvironment",
+        entry_point="envs:OvercookedEnvironment",
+        )
+
+register(
+        id="leanOvercookedEnv-v0",
+        entry_point="envs:LeanOvercookedEnvironment",
         )

@@ -1,21 +1,16 @@
 import os
 import pygame
-import pathlib
 import numpy as np
 from utils.core import *
 from misc.game.utils import *
 
-dirname = pathlib.Path(__file__).parent.absolute()
-graphics_dir = f"{dirname}/graphics"
+graphics_dir = 'misc/game/graphics'
 _image_library = {}
-
-# Disable sound dependency
-pygame.mixer.quit()
 
 def get_image(path):
     global _image_library
     image = _image_library.get(path)
-    if image == None:
+    if image is None:
         canonicalized_path = path.replace('/', os.sep).replace('\\', os.sep)
         image = pygame.image.load(canonicalized_path)
         _image_library[path] = image
@@ -27,7 +22,6 @@ class Game:
         self._running = True
         self.world = world
         self.sim_agents = sim_agents
-        self.current_agent = self.sim_agents[0]
         self.play = play
         
         # Visual parameters
@@ -44,7 +38,11 @@ class Game:
 
 
     def on_init(self):
+        import os
+        os.environ['SDL_AUDIODRIVER'] = 'dsp'
+        #pygame.display.init()
         pygame.init()
+        
         if self.play:
             self.screen = pygame.display.set_mode((self.width, self.height))
         else:
@@ -61,19 +59,20 @@ class Game:
     def on_render(self):
         self.screen.fill(Color.FLOOR)
         objs = []
-        
+
         # Draw gridsquares
         for o_list in self.world.objects.values():
             for o in o_list:
                 if isinstance(o, GridSquare):
-                    self.draw_gridsquare(o)
+                    if not o.hidden:
+                        self.draw_gridsquare(o)
                 elif o.is_held == False:
                     objs.append(o)
         
         # Draw objects not held by agents
         for o in objs:
             self.draw_object(o)
-
+    
         # Draw agents and their holdings
         for agent in self.sim_agents:
             self.draw_agent(agent)
@@ -86,7 +85,7 @@ class Game:
     def draw_gridsquare(self, gs):
         sl = self.scaled_location(gs.location)
         fill = pygame.Rect(sl[0], sl[1], self.scale, self.scale)
-
+    
         if isinstance(gs, Counter):
             pygame.draw.rect(self.screen, Color.COUNTER, fill)
             pygame.draw.rect(self.screen, Color.COUNTER_BORDER, fill, 1)
@@ -100,10 +99,14 @@ class Game:
             pygame.draw.rect(self.screen, Color.COUNTER_BORDER, fill, 1)
             self.draw('cutboard', self.tile_size, sl)
 
+        elif isinstance(gs, Order) and not gs.delivered:
+            pygame.draw.rect(self.screen, Color.FLOOR, fill)
+            self.draw(gs.full_name, self.tile_size, sl)
+            
         return
 
     def draw(self, path, size, location):
-        image_path = '{}/{}.png'.format(graphics_dir, path)
+        image_path = f'{graphics_dir}/{path}.png'
         image = pygame.transform.scale(get_image(image_path), size)
         self.screen.blit(image, location)
 
@@ -158,5 +161,7 @@ class Game:
 
 
     def on_cleanup(self):
-        # pygame.display.quit()
+        #pygame.display.quit()
         pygame.quit()
+        if self.play:
+            exit()

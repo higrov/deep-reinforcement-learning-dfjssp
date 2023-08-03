@@ -1,0 +1,31 @@
+# command: python main.py --config evaluation/1x3
+# RunInfo:
+run-id: BayDel-1x3-Benchmark # for identifying in logs and in folders etc
+continue-run: false # continue training from previous run
+notes: Benchmarking Other approaches on 1x3 layouts -- Bayesian Delegation
+tags: eval-baseline, 1x3, benchmark-bd # comma separated list of tags for this run
+# Environment:
+# level_types = (open-divider, partial-divider, full-divider, cross-divider, block-divider, ring-divider)
+level: open-divider_salad, partial-divider_salad, block-divider_salad, ring-divider_salad, open-divider_onion-salad, block-divider_onion-salad  # level file txt
+num-agents: 1
+num-orders: 3
+max-num-timesteps: 200 # quit after this many timesteps
+max-num-subtasks: 14
+seed: 1
+device: cuda
+# Environment Switches
+record: false
+randomize: true
+# Mode:
+evaluate: true
+# Agents:
+model1: bd
+num-processes: 20 # number of parallel environments / number of eval episodes
+# HyperParameters - Bayesian Delegation:
+#### Delegation Planner
+beta: 1.3
+#### Navigation Planner
+alpha: 0.02
+tau: 2
+cap: 50
+main-cap: 75

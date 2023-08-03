@@ -1,69 +1,57 @@
-# from environment import OvercookedEnvironment
-# from gym_cooking.envs import OvercookedEnvironment
+
+from asyncio.log import logger
+import logging
+
+import wandb
+from envs.overcooked_environment import OvercookedEnvironment
+from rl import train_mappo
+from rl.mappo.envs.overcooked_environment_ma_wrapper import OverCookedMAEnv
+
 from recipe_planner.recipe import *
-from utils.world import World
-from utils.agent import RealAgent, SimAgent, COLORS
+from utils.agent import RealAgent, COLORS
 from utils.core import *
 from misc.game.gameplay import GamePlay
-from misc.metrics.metrics_bag import Bag
+from rl import train_ppo, train_seac
 
-import numpy as np
-import random
-import argparse
-from collections import namedtuple
+import utils.utils as utils
+import parsers as parsers
+import sweep as sweep
 
-import gym
-from gym.envs.registration import register
+import gymnasium as gym
+from gymnasium.envs.registration import register
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s: (%(process)d) [%(levelname).1s] - %(name)s: %(message)s",
+    datefmt="%m/%d %H:%M:%S",
+)
 
-def parse_arguments():
-    parser = argparse.ArgumentParser("Overcooked 2 argument parser")
+logger = logging.getLogger(__name__)
 
-    # Environment
-    parser.add_argument("--level", type=str, required=True)
-    parser.add_argument("--num-agents", type=int, required=True)
-    parser.add_argument("--max-num-timesteps", type=int, default=1, help="Max number of timesteps to run")
-    parser.add_argument("--max-num-subtasks", type=int, default=14, help="Max number of subtasks for recipe")
-    parser.add_argument("--seed", type=int, default=1, help="Fix pseudorandom seed")
-    parser.add_argument("--with-image-obs", action="store_true", default=False, help="Return observations as images (instead of objects)")
+def define_arglist():
+    global global_arglist
+    global_arglist = None
 
-    # Delegation Planner
-    parser.add_argument("--beta", type=float, default=1.3, help="Beta for softmax in Bayesian delegation updates")
-
-    # Navigation Planner
-    parser.add_argument("--alpha", type=float, default=0.01, help="Alpha for BRTDP")
-    parser.add_argument("--tau", type=int, default=2, help="Normalize v diff")
-    parser.add_argument("--cap", type=int, default=75, help="Max number of steps in each main loop of BRTDP")
-    parser.add_argument("--main-cap", type=int, default=100, help="Max number of main loops in each run of BRTDP")
-
-    # Visualizations
-    parser.add_argument("--play", action="store_true", default=False, help="Play interactive game with keys")
-    parser.add_argument("--record", action="store_true", default=False, help="Save observation at each time step as an image in misc/game/record")
-
-    # Models
-    # Valid options: `bd` = Bayes Delegation; `up` = Uniform Priors
-    # `dc` = Divide & Conquer; `fb` = Fixed Beliefs; `greedy` = Greedy
-    parser.add_argument("--model1", type=str, default=None, help="Model type for agent 1 (bd, up, dc, fb, or greedy)")
-    parser.add_argument("--model2", type=str, default=None, help="Model type for agent 2 (bd, up, dc, fb, or greedy)")
-    parser.add_argument("--model3", type=str, default=None, help="Model type for agent 3 (bd, up, dc, fb, or greedy)")
-    parser.add_argument("--model4", type=str, default=None, help="Model type for agent 4 (bd, up, dc, fb, or greedy)")
-
-    return parser.parse_args()
+def change_arglist(val):
+    global global_arglist
+    global_arglist = val
 
 
-def fix_seed(seed):
-    np.random.seed(seed)
-    random.seed(seed)
-
-def initialize_agents(arglist):
+def initialize_agents(arglist, orders: tuple[Order], env, model_types, model_paths,) -> list[RealAgent]:
     real_agents = []
 
-    with open('utils/levels/{}.txt'.format(arglist.level), 'r') as f:
+    with open(f"utils/levels/{arglist.level}.txt", "r") as f:
         phase = 1
         recipes = []
+
+        RL = ["mappo", "ppo", "seac"]
+        
         for line in f:
-            line = line.strip('\n')
-            if line == '':
+            line = line.strip("\n")
+
+            if (
+                line == ""
+            ):  # empty line changes phase from level layout -> recipes -> agent locations
                 phase += 1
 
             # phase 2: read in recipe list
@@ -73,70 +61,273 @@ def initialize_agents(arglist):
             # phase 3: read in agent locations (up to num_agents)
             elif phase == 3:
                 if len(real_agents) < arglist.num_agents:
-                    loc = line.split(' ')
+                    loc = line.split(" ")
+                    model_path = model_paths[len(real_agents)] if model_paths else None
+                    model_type = model_types[len(real_agents)] if model_types else None
+                    obs_space = env.observation_space[len(real_agents)] if model_type in RL else None
+                    action_space = env.action_space[len(real_agents)] if model_type in RL else None
                     real_agent = RealAgent(
-                            arglist=arglist,
-                            name='agent-'+str(len(real_agents)+1),
-                            id_color=COLORS[len(real_agents)],
-                            recipes=recipes)
+                        arglist=arglist,
+                        name="agent-" + str(len(real_agents) + 1),
+                        id_color=COLORS[len(real_agents)],
+                        recipes=recipes,
+                        obs_space=obs_space,
+                        action_space=action_space,
+                        model_type=model_type,
+                        model_path=model_path,
+                        env=env,
+                    )
                     real_agents.append(real_agent)
 
     return real_agents
 
-def main_loop(arglist):
-    """The main loop for running experiments."""
-    print("Initializing environment and agents.")
-    env = gym.envs.make("overcookedEnv-v0", arglist=arglist)
-    env_reset = env.reset()
+
+def eval_loop(arglist):
+    """The main evaluation loop for running trials and experiments."""
+    logger.info("Initializing environment and agents.")
+    all_levels = arglist.level.split(',')
+    run_id = arglist.run_id
+    eval_group = run_id
     
-    # game = GameVisualize(env)
-    real_agents = initialize_agents(arglist=arglist)
-    print("Initialized agents")
+    model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4, arglist.model5][:arglist.num_agents]
+    model_paths = [arglist.model1_path, arglist.model2_path, arglist.model3_path, arglist.model4_path, arglist.model5_path][:arglist.num_agents]
+    RL = ["mappo", "ppo", "seac"]
+    BD = ["bd", "up", "fb", "dc", "greedy"]
 
-    # Info bag for saving pkl files
-    bag = Bag(arglist=arglist, filename=env.filename)
-    bag.set_recipe(recipe_subtasks=env.all_subtasks)
+    eval_columns = ['run_id', 'layout', 'model1', 'model2', 'model3', 'model4', 'model5', 'successful', 'failed', 'episode_length', 'episode_duration', 'deliveries', 'handovers', 'collisions', 'shuffles', 'invalid_actions', 'location_repeaters', 'holding_repeaters', 'order_1_delivery', 'order_2_delivery', 'order_3_delivery', 'order_4_delivery', 'order_5_delivery']
+    
+    eval_table = wandb.Table(columns=eval_columns)
+    for level in all_levels:
+        arglist.level = level.strip()
+        arglist.run_id = f"{run_id}-{arglist.level}-{int(time.time())}"
 
-    print("Set Recipe")
+        eval_dict = {k: 0 for k in eval_columns}
+        eval_dict['run_id'] = arglist.run_id
+        eval_dict['layout'] = arglist.level
+        for i in range(5):
+            eval_dict[f'model{i+1}'] = '' if i >= arglist.num_agents else model_types[i]
+            eval_dict[f'order_{i+1}_delivery'] = 0
 
 
-    while not env.done():
-        action_dict = {}
+        trial = wandb.init(project="Paper-Results", id=arglist.run_id, name=arglist.run_id, group=eval_group, notes=arglist.notes, tags=parsers.parse_tags(arglist.tags), sync_tensorboard=False, resume="allow")
+        trial_table = wandb.Table(columns=['layout', 'seed', *eval_columns[7:]])
 
-        for agent in real_agents:
-            action = agent.select_action(obs=env_reset)
-            action_dict[agent.name] = action
+        NUM_TRIALS = arglist.num_processes
+        logger.info(f'Starting trials for level {arglist.level}')
+        for i in range(1, NUM_TRIALS + 1):
+
+            logger.info(f"Trial {i} of {NUM_TRIALS}")
+            logger.info(f"Preparing env")
         
-        env_reset, reward, done, info = env.step(action_dict)
+            if not any([model_type in RL for model_type in model_types]):
+                env = gym.envs.make("overcookedEnv-v0", arglist=arglist)
+            else:
+                env: OvercookedEnvironment = gym.envs.make( # type: ignore
+                    "overcookedEnv-v0", arglist=arglist, early_termination=False
+                )
+                # # wrapper env for multi-agent
+                env: OverCookedMAEnv = OverCookedMAEnv.fromEnv(env)
 
-        # Agents
-        for agent in real_agents:
-            agent.refresh_subtasks(world=env.world)
+            utils.fix_seed(i)
+            env.seed(i)
+            obs = env.reset()
+                
+            real_agents = initialize_agents(
+                    arglist=arglist,
+                    orders=env.orders,
+                    model_types=model_types,
+                    model_paths=model_paths,
+                    env=env,
+            )
 
-        # Saving info
-        bag.add_status(cur_time=info['t'], real_agents=real_agents)
+            logger.info(f"Preparing agents")
+            env.render()
+            while not all(env.done()):
+                #print(env.t)
+                action_dict = {}
+                for agent in real_agents:
+                    t = env.t
+                    agent_idx = int(agent.name[-1]) - 1
+                    sim_agent = env.sim_agents[agent_idx]
+                    # take action according to agent's model
+                    if agent.model_type == "mappo":
+                        osp = obs # MAPPO agents require our shaped observation space
+                        action_dict[agent.name] = agent.select_action(t, osp, sim_agent)
+                    else:
+                        osp = env # BD agents require whole env object as obs
+                        action_dict[agent.name] = agent.select_action(t, osp, sim_agent)
+
+                obs, _, done, info = env.step(action_dict)
+                # if all(done):
+                #     print(env.termination_info)
+                env.render()
+                # Agents
+                for agent in real_agents:
+                    if agent.model_type not in RL:
+                        agent.refresh_subtasks(remaining_orders=env.get_remaining_orders(), world=env.world)
 
 
-    # Saving final information before saving pkl file
-    bag.set_collisions(collisions=env.collisions)
-    bag.set_termination(termination_info=env.termination_info,
-            successful=env.successful)
+            trial.log(env.termination_stats, step=i)
+            trial_table.add_data(*[arglist.level, i, *list(env.termination_stats.values())])
+            if arglist.record:
+                anim_file = env.get_animation_path()
+                trial.log({"animation": wandb.Video(anim_file, fps=4, format="gif")}, step=i)
+            # update eval_dict with running sum for average later
+            for k, v in env.termination_stats.items():
+                eval_dict[k] += v
 
-if __name__ == '__main__':
-    arglist = parse_arguments()
+
+        env.close()
+        trial.log({"run_stats": trial_table})
+        
+        # average termination stats of all trials
+        for k, v in eval_dict.items():
+            if k in ['run_id', 'layout', 'model1', 'model2', 'model3', 'model4', 'model5']:
+                continue
+
+            eval_dict[k] = v / NUM_TRIALS if k not in ['successful', 'failed'] else v
+
+        eval_table.add_data(*list(eval_dict.values()))
+        trial.finish()
+
+    eval_run_summary = f'{run_id}_summary-{int(time.time())}'
+    eval_run = wandb.init(project="Paper-Results", id=eval_run_summary, name=eval_run_summary, group=eval_group, notes=arglist.notes, tags=parsers.parse_tags(arglist.tags), sync_tensorboard=False, resume="allow")
+    eval_run.log({"eval_stats": eval_table})
+    eval_run.finish()
+
+def train_loop(arglist):
+    """The train loop for training RL Agents."""
+    logger.info("Initializing environment and agents for training RL Agents.")
+    arglist.run_id = arglist.run_id if arglist.continue_run else f"{arglist.run_id}{'-' if arglist.run_id else ''}{int(time.time())}"
+    model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4]
+
+    if any(x == "ppo" for x in model_types):
+        train_ppo.learn_ppo(
+            env_id="overcookedEnv-v0",
+            arglist=arglist,
+            run_id=arglist.run_id,
+            num_total_timesteps=arglist.num_total_timesteps,
+            num_steps_per_update=arglist.num_steps_per_update,
+            num_processes=arglist.num_processes,
+            device=arglist.device,
+            lr=arglist.lr,
+            batch_size=arglist.batch_size,
+            gamma=arglist.gamma,
+            gae_lambda=arglist.gae_lambda,
+            clip_range=arglist.clip_range,
+            entropy_coef=arglist.entropy_coef,
+            value_loss_coef=arglist.value_loss_coef,
+            max_grad_norm=arglist.max_grad_norm,
+            restore=True,
+            notes=arglist.notes,
+            tags=parsers.parse_tags(arglist.tags),
+        )
+    if any(x == "seac" for x in model_types):
+        train_seac.learn_seac(
+            env_id="overcookedEnv-v0",
+            arglist=arglist,
+            run_id=arglist.run_id,
+            num_episodes=arglist.num_episodes,
+            num_steps_per_episode=arglist.num_timesteps_per_episode,
+            num_processes=arglist.num_processes,
+            device=arglist.device,
+            lr=arglist.lr,
+            adam_eps=arglist.adam_eps,
+            use_gae=arglist.use_gae,
+            gamma=arglist.gamma,
+            value_loss_coef=arglist.value_loss_coef,
+            entropy_coef=arglist.entropy_coef,
+            seac_coef=arglist.seac_coef,
+            max_grad_norm=arglist.max_grad_norm,
+            restore=True,
+            notes=arglist.notes,
+            tags=parsers.parse_tags(arglist.tags),
+        )
+    if any(x == "mappo" for x in model_types):
+        train_mappo.learn_mappo(
+            env_id="overcookedEnv-v0",
+            arglist=arglist,
+            run_id=arglist.run_id,
+            num_total_timesteps=arglist.num_total_timesteps,
+            num_processes=arglist.num_processes,
+            device=arglist.device,
+            share_policy=arglist.share_policy,
+            use_centralized_v=arglist.use_centralized_v,
+            hidden_size=arglist.hidden_size,
+            layer_N=arglist.num_mlp_hidden_layers,
+            use_popart=arglist.use_popart,
+            use_valuenorm=arglist.use_valuenorm,
+            use_feature_normalization=arglist.use_featurenorm,
+            use_naive_recurrent_policy=arglist.use_naive_recurrent_policy,
+            use_recurrent_policy=arglist.use_recurrent_policy,
+            recurrent_N=arglist.num_rnn_hidden_layers,
+            data_chunk_length=arglist.rnn_data_length,
+            lr=arglist.lr,
+            critic_lr=arglist.critic_lr,
+            adam_eps=arglist.adam_eps,
+            ppo_epoch=arglist.num_epoch,
+            clip_param=arglist.clip_range,
+            num_mini_batch=arglist.batch_size,
+            entropy_coef=arglist.entropy_coef,
+            value_loss_coef=arglist.value_loss_coef,
+            max_grad_norm=arglist.max_grad_norm,
+            use_gae=arglist.use_gae,
+            gamma=arglist.gamma,
+            gae_lambda=arglist.gae_lambda,
+            restore=True,
+            notes=arglist.notes,
+            tags=parsers.parse_tags(arglist.tags),
+        )
+
+
+
+if __name__ == "__main__":
+    # initializes command line arguments, all missing arguments have default values
+    define_arglist()
+    change_arglist(parsers.parse_arguments())
+    # if path to config file is provided then command line / default arguments are overridden
+    if global_arglist.config:
+        config = parsers.parse_config(global_arglist.config)
+        change_arglist(config)
+        
+    arglist = parsers.ArgList(**vars(global_arglist))
+    # validating agent types
+    model_types = [m for m in [arglist.model1, arglist.model2, arglist.model3, arglist.model4, arglist.model5] if m is not None]
+
+    utils.fix_seed(seed=arglist.seed)
     register(
         id="overcookedEnv-v0",
         entry_point="envs:OvercookedEnvironment",
         )
-
+    env: OvercookedEnvironment = gym.envs.make(
+            "overcookedEnv-v0", arglist=arglist
+        )
     if arglist.play:
-        env = gym.envs.make("overcookedEnv-v0", arglist=arglist)
+        env: OvercookedEnvironment = gym.envs.make(
+            "overcookedEnv-v0", arglist=arglist
+        )
         env.reset()
         game = GamePlay(env.filename, env.world, env.sim_agents)
         game.on_execute()
+    elif arglist.train or arglist.sweep or arglist.evaluate:
+        if arglist.train or arglist.sweep:    
+            assert any(_ in ["mappo", "ppo", "seac"] for _ in model_types), "at least one agent must be trained with an RL algorithm for training mode. Please recheck your model types."
+        else:
+            assert len(model_types) == arglist.num_agents, "num_agents should match the number of models specified. Please recheck your config or arguments."
+
+    if arglist.train:
+        train_loop(arglist=arglist)
+
+    elif arglist.sweep:
+        if all(x == 'ppo' for x in model_types):
+            sweep.train_loop_with_sweep_ppo(arglist=arglist)
+        elif all(x == 'seac' for x in model_types):
+            sweep.train_loop_with_sweep_seac(arglist=arglist)
+        elif all(x == 'mappo' for x in model_types):
+            sweep.train_loop_with_sweep_mappo(arglist=arglist)
+
+    elif arglist.evaluate:
+        eval_loop(arglist=arglist)
+        
     else:
-        model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4]
-        assert len(list(filter(lambda x: x is not None,
-            model_types))) == arglist.num_agents, "num_agents should match the number of models specified"
-        fix_seed(seed=arglist.seed)
-        main_loop(arglist=arglist)
+        raise ValueError("Please specify either --play, --train, --sweep, or --evaluate mode.")

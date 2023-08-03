@@ -1,1 +1,4 @@
 from envs.overcooked_environment import OvercookedEnvironment
+from envs.lean_overcooked_environment import LeanOvercookedEnvironment
+from envs.observation_helpers import ObservationHelpers
+from envs.reward_helpers import RewardHelpers

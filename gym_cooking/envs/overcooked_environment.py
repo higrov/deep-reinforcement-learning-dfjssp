@@ -1,282 +1,664 @@
-# Recipe planning
-from recipe_planner.stripsworld import STRIPSWorld
-import recipe_planner.utils as recipe
-from recipe_planner.recipe import *
-
-# Delegation planning
-from delegation_planner.bayesian_delegator import BayesianDelegator
-
-# Navigation planning
-import navigation_planner.utils as nav_utils
-
-# Other core modules
-from utils.interact import interact
-from utils.world import World
-from utils.core import *
-from utils.agent import SimAgent
-from misc.game.gameimage import GameImage
-from utils.agent import COLORS
-
-import os
+import copy
+import logging
+from asyncio.log import logger
+from collections import deque, namedtuple
+from dataclasses import dataclass
+from itertools import combinations, product
+from time import perf_counter
+import logging
 import copy
 import networkx as nx
 import numpy as np
-from itertools import combinations, permutations, product
-from collections import namedtuple
 
-import gym
-from gym import error, spaces, utils
-from gym.utils import seeding
+from recipe_planner.stripsworld import STRIPSWorld
+from recipe_planner.recipe import *
+import recipe_planner.utils as recipe_utils
+import navigation_planner.utils as nav_utils
+from utils.interact import ActionRepr, interact
+from utils.core import *
 
 
-CollisionRepr = namedtuple("CollisionRepr", "time agent_names agent_locations")
+import gymnasium as gym
+from gymnasium import spaces
 
+from utils.agent import COLORS, SimAgent
+from utils.world import World
+from misc.game.gameimage import GameImage
+
+from envs.observation_helpers import ObservationHelpers
+from envs.reward_helpers import RewardHelpers
+
+import sys
+
+logger = logging.getLogger(__name__)
+
+StateRepr = namedtuple("StateRepr", "time agent_states item_states")
+
+@dataclass
+class AgentHistoryRepr:
+    time: int
+    location: tuple[int, int] 
+    action_type: str
+    holding: Object
+    delivered: bool
+    handed_over: bool
+    collided: bool 
+    shuffled: bool 
+    invalid_actor: bool
+    location_repeater: bool 
+    holding_repeater: bool
 
 class OvercookedEnvironment(gym.Env):
     """Environment object for Overcooked."""
-
-    def __init__(self, arglist):
+    def __init__(self, arglist, env_id=0, early_termination=True, load_level=True):
         self.arglist = arglist
+        self.t_0 = 0
         self.t = 0
-        self.set_filename()
-
+        self.env_id = env_id
+        self.early_termination = early_termination
+        self.levels = arglist.level.split(',')
+        self.curr_level = random.choice(self.levels).strip()
+        self.filename = ''
+        self.max_num_agents = 5
+        self.max_num_orders = 5
+        self.set_filename(arglist=arglist, suffix=f"/{env_id}")
+        
+        self.recipes: list[Recipe] = []
+        self.sim_agents: list[SimAgent] = []
+        # For maintaining state
+        self.obs_tm1 = None
+        self.rl_obs = None
         # For visualizing episode.
         self.rep = []
-
         # For tracking data during an episode.
-        self.collisions = []
-        self.termination_info = ""
+        self.agent_history: dict[str, list[AgentHistoryRepr]] = {}
+        # stats for info
+        self.num_deliveries = 0
+        self.num_handovers = 0
+        self.num_collisions = 0
+        self.num_shuffles = 0
+        self.num_invalid_actions = 0
+        self.num_location_repeaters = 0
+        self.num_holding_repeaters = 0
+        # flags for termination
         self.successful = False
-        
-        # Add obs and action space to better match
-        # OpenAI Gym's formalism
-        self.observation_space = spaces.Box(
-            low=0,
-            high=255,
-            shape=(560, 560, 3), # By default
-            dtype="uint8"
-        )
+        self.failed = False
+        self.termination_info = ""
+        self.termination_stats = {
+            'successful': False,
+            'failed': False,
+            'episode_length': 0,
+            'episode_duration': 0,
+            'deliveries': 0,
+            'handovers': 0,
+            'collisions': 0,
+            'shuffles': 0,
+            'invalid_actions': 0,
+            'location_repeaters': 0,
+            'holding_repeaters': 0,
+        }
+        self.termination_stats.update({f'order_{i+1}_delivery': self.arglist.max_num_timesteps for i in range(self.max_num_orders)})
 
-        self.action_space = spaces.Discrete(4)
+        # load world and level
+        self.game = None
+        self.default_world: World = None
+        self.world: World = None
+        if load_level:
+            self.load_level(
+                level=self.curr_level,
+                num_agents=np.random.randint(1, 5) if all((False, self.arglist.train, self.arglist.randomize)) else self.arglist.num_agents,
+                num_orders=self.arglist.num_orders,
+                randomize=self.arglist.randomize,
+                reload_level=True,
+            )
+        self.sw = None
+
+        # Set up action and observation spaces
+        # Only possible actions are up, down, left, right + no-op
+        self.action_space = spaces.Discrete(5* self.max_num_agents)
+        # global observation space = num_agents
+        self.observation_space = self.get_observation_space_structure()        
+        # number of RL agents being trained (for env wrappers)
+        self.n_agents = len([m for m in [self.arglist.model1, self.arglist.model2, self.arglist.model3, self.arglist.model4] if m in ["mappo", "ppo", "seac"]])
+
+        # Recipe Planning stuff for BD
+        self.any_bayesian = len(self.sim_agents) > self.n_agents
+        self.all_subtasks = []
+
+        # default empty obs, empty reward, empty done
+        self.agent_padding = [None] * self.max_num_agents
+        self.done_padding = [True] * self.max_num_agents
+        self.reward_padding = [0.0] * self.max_num_agents
+        self.order_padding = [None] * self.max_num_orders
 
     def get_repr(self):
-        return self.world.get_repr() + tuple([agent.get_repr() for agent in self.sim_agents])
+        return self.world.get_repr() + tuple(agent.get_repr() for agent in self.sim_agents)
+
+    def get_objects_repr(self, flat=False):
+        return self.world.get_repr() if not flat else self.world.get_dynamic_objects_flat() 
+
+    def get_agents_repr(self, fixed=False):
+        return tuple([agent.get_repr(fixed) for agent in self.sim_agents])
+
+    def get_history_repr(self, agent, action_type="Wait", delivered=False, handed_over=False, collided=False, shuffled=False, invalid_actor=False, location_repeater=False, holding_repeater=False):
+        return AgentHistoryRepr(self.t, agent.location, action_type, agent.holding, delivered, handed_over, collided, shuffled, invalid_actor, location_repeater, holding_repeater)
 
     def __str__(self):
         # Print the world and agents.
-        _display = list(map(lambda x: ''.join(map(lambda y: y + ' ', x)), self.rep))
-        return '\n'.join(_display)
+        _display = list(map(lambda x: "".join(map(lambda y: y + " ", x)), self.rep))
+        return "\n".join(_display)
 
     def __eq__(self, other):
-        return self.get_repr() == other.get_repr()
+        return (self.get_repr() == other.get_repr()) if other is not None else self is None
 
     def __copy__(self):
-        new_env = OvercookedEnvironment(self.arglist)
+        new_env = OvercookedEnvironment(self.arglist, env_id=self.env_id, early_termination=self.early_termination, load_level=False)
         new_env.__dict__ = self.__dict__.copy()
         new_env.world = copy.copy(self.world)
+        new_env.default_world = self.default_world
         new_env.sim_agents = [copy.copy(a) for a in self.sim_agents]
         new_env.distances = self.distances
-
         # Make sure new objects and new agents' holdings have the right pointers.
         for a in new_env.sim_agents:
             if a.holding is not None:
                 a.holding = new_env.world.get_object_at(
-                        location=a.location,
-                        desired_obj=None,
-                        find_held_objects=True)
+                    location=a.location, desired_obj=None, find_held_objects=True
+                )
+        # print(sys.getsizeof(new_env))
+        # print(sys.getsizeof(new_env.world))
+        # print(sys.getsizeof(new_env.sim_agents))
         return new_env
 
-    def set_filename(self):
-        self.filename = "{}_agents{}_seed{}".format(self.arglist.level,\
-            self.arglist.num_agents, self.arglist.seed)
+    def set_filename(self, arglist, suffix=""):
+        self.filename = (
+            f"{self.curr_level}/agents-{arglist.num_agents}/orders-{arglist.num_orders}/"
+        )
         model = ""
-        if self.arglist.model1 is not None:
-            model += "_model1-{}".format(self.arglist.model1)
-        if self.arglist.model2 is not None:
-            model += "_model2-{}".format(self.arglist.model2)
-        if self.arglist.model3 is not None:
-            model += "_model3-{}".format(self.arglist.model3)
-        if self.arglist.model4 is not None:
-            model += "_model4-{}".format(self.arglist.model4)
-        self.filename += model
+        if arglist.model1 is not None:
+            model += f"model1-{arglist.model1}"
+        if arglist.model2 is not None:
+            model += f"_model2-{arglist.model2}"
+        if arglist.model3 is not None:
+            model += f"_model3-{arglist.model3}"
+        if arglist.model4 is not None:
+            model += f"_model4-{arglist.model4}"
+        if arglist.model5 is not None:
+            model += f"_model5-{arglist.model5}"
 
-    def load_level(self, level, num_agents):
-        x = 0
-        y = 0
-        dir_path = os.path.dirname(os.path.realpath(__file__))
-        with open('{}/../utils/levels/{}.txt'.format(dir_path, level), 'r') as file:
-            # Mark the phases of reading.
-            phase = 1
-            for line in file:
-                line = line.strip('\n')
-                if line == '':
-                    phase += 1
+        self.filename += model + suffix
 
-                # Phase 1: Read in kitchen map.
-                elif phase == 1:
-                    for x, rep in enumerate(line):
-                        # Object, i.e. Tomato, Lettuce, Onion, or Plate.
-                        if rep in 'tlop':
-                            counter = Counter(location=(x, y))
-                            obj = Object(
-                                    location=(x, y),
-                                    contents=RepToClass[rep]())
-                            counter.acquire(obj=obj)
-                            self.world.insert(obj=counter)
-                            self.world.insert(obj=obj)
-                        # GridSquare, i.e. Floor, Counter, Cutboard, Delivery.
-                        elif rep in RepToClass:
-                            newobj = RepToClass[rep]((x, y))
-                            self.world.objects.setdefault(newobj.name, []).append(newobj)
-                        else:
-                            # Empty. Set a Floor tile.
-                            f = Floor(location=(x, y))
-                            self.world.objects.setdefault('Floor', []).append(f)
-                    y += 1
-                # Phase 2: Read in recipe list.
-                elif phase == 2:
-                    self.recipes.append(globals()[line]())
+    def load_level(self, level, num_agents, num_orders, randomize, reload_level):
+        if self.default_world is not None and not reload_level:
+            self.world = copy.copy(self.default_world)
+            # if randomize:
+            #     self.randomize_world()
+            self.distances = {}
+            
+        else:
+            self.default_world = World()
+            x = 0
+            y = 0
+            with open(f"utils/levels/{level}.txt", "r") as file:
+                # Mark the phases of reading.
+                phase = 1
+                for line in file:
+                    line = line.strip("\n")
+                    if line == "":
+                        phase += 1
 
-                # Phase 3: Read in agent locations (up to num_agents).
-                elif phase == 3:
-                    if len(self.sim_agents) < num_agents:
-                        loc = line.split(' ')
-                        sim_agent = SimAgent(
-                                name='agent-'+str(len(self.sim_agents)+1),
+                    # Phase 1: Read in kitchen map.
+                    elif phase == 1:
+                        for x, rep in enumerate(line):
+                            # Object, i.e. Tomato, Lettuce, Onion, or Plate.
+                            if rep in "tlop":
+                                counter = Counter(location=(x, y))
+                                obj = Object(location=(x, y), contents=RepToClass[rep]())
+                                counter.acquire(obj=obj)
+                                self.default_world.insert(obj=counter)
+                                self.default_world.insert(obj=obj, toDefault=True)
+                            # GridSquare, i.e. Floor, Counter, Cutboard, Delivery.
+                            elif rep in RepToClass:
+                                newobj = RepToClass[rep]((x, y))
+                                self.default_world.objects.setdefault(newobj.name, []).append(
+                                    newobj
+                                )
+                            else:
+                                # Empty. Set a Floor tile.
+                                f = Floor(location=(x, y))
+                                self.default_world.objects.setdefault("Floor", []).append(f)
+                        y += 1
+                    # Phase 2: Read in recipe list.
+                    elif phase == 2:
+                        self.recipes.append(globals()[line]())
+
+                    # Phase 3: Read in agent locations (up to num_agents).
+                    elif phase == 3:
+                        if len(self.sim_agents) < num_agents:
+                            loc = line.split(" ")
+                            sim_agent = SimAgent(
+                                name=f"agent-{len(self.sim_agents)+1}",
                                 id_color=COLORS[len(self.sim_agents)],
-                                location=(int(loc[0]), int(loc[1])))
-                        self.sim_agents.append(sim_agent)
+                                location=(int(loc[0]), int(loc[1])),
+                            )
+                            self.sim_agents.append(sim_agent)
 
-        self.distances = {}
-        self.world.width = x+1
-        self.world.height = y
-        self.world.perimeter = 2*(self.world.width + self.world.height)
+            # generate order queue from recipe list for level
+            self.default_world.objects.setdefault("Order", [])
+            for i in range(num_orders):  # append orders for level
+                random_recipe = self.recipes[np.random.randint(0, len(self.recipes))]
+                location = len(self.default_world.objects.get("Order")), y 
+                nextOrder = RepToClass[Rep.ORDER](random_recipe, location, self.t)
+                self.default_world.objects.get("Order").append(nextOrder)
+
+            self.distances = {}
+            self.default_world.width = x + 1
+            self.default_world.height = y + 1  # + 1 for the orders queue
+            self.default_world.perimeter = 2 * (self.default_world.width + self.default_world.height)
+
+            self.world = copy.copy(self.default_world)
+            # get all orders not just incomplete ones
+            self.orders: tuple[Order] = tuple(self.world.objects.get("Order")) 
+        
+            # if randomize:
+            #     self.randomize_world()
+
+    def randomize_world(self, randomize_agents=True, randomize_objects=True, randomize_stations=False):
+        # level_types = ('open-divider', 'partial-divider', 'full-divider', 'cross-divider', 'block-divider', 'ring-divider')
+        random_floors = np.random.choice(self.world.get_object_list(['Floor']), len(self.sim_agents))
+        if randomize_agents:
+            # if only one agent don't spawn in center of ring spawned agent will be locked
+            if 'ring' in self.curr_level and len(self.sim_agents) == 1:
+                while (3, 3) in [f.location for f in random_floors]:
+                    #print('ring', [f.location for f in random_floors])
+                    random_floors = np.random.choice(self.world.get_object_list(['Floor']), len(self.sim_agents))
+            # if full divider check that there is at least 1 agent on both sides
+            elif 'full' in self.curr_level:
+                while len(self.sim_agents) > 1 and all(f.location[0] < 3 for f in random_floors) or all(f.location[0] > 3 for f in random_floors):
+                    #print('full', [f.location for f in random_floors])
+                    random_floors = np.random.choice(self.world.get_object_list(['Floor']), len(self.sim_agents))
+            # if cross-divider check that at most 2 agents in a block
+            elif 'cross' in self.curr_level:
+                blockTL = [f for f in random_floors if f.location[0] < 3 and f.location[1] < 3]
+                blockTR = [f for f in random_floors if f.location[0] < 3 and f.location[1] > 3]
+                blockBL = [f for f in random_floors if f.location[0] > 3 and f.location[1] < 3]
+                blockBR = [f for f in random_floors if f.location[0] > 3 and f.location[1] > 3]
+                while not all(len(block) < 3 for block in [blockTL, blockTR, blockBL, blockBR]):
+                    #print('cross', [f.location for f in random_floors])
+                    random_floors = np.random.choice(self.world.get_object_list(['Floor']), len(self.sim_agents))
+                    blockTL = [f for f in random_floors if f.location[0] < 3 and f.location[1] < 3]
+                    blockTR = [f for f in random_floors if f.location[0] < 3 and f.location[1] > 3]
+                    blockBL = [f for f in random_floors if f.location[0] > 3 and f.location[1] < 3]
+                    blockBR = [f for f in random_floors if f.location[0] > 3 and f.location[1] > 3]
+
+            for agent, floor in zip(self.sim_agents, random_floors):
+                agent.location = floor.location
+
+        # important to do both together since the dynamic objects are also placed on counters 
+        if randomize_stations or randomize_objects:
+            stations = self.world.get_object_list(['Cutboard', 'Delivery'])
+            ingredients = self.world.get_dynamic_object_list()
+
+            non_corner_counters = [_ for _ in self.world.get_object_list(['Counter']) if self.world.is_accessible(_.location)]
+            random_counters: list[Counter] = np.random.choice(non_corner_counters, len(stations) + len(ingredients))
+
+            if randomize_stations:
+                for station, counter in zip(stations, random_counters[:len(stations)]):
+                    station.location, counter.location = counter.location, station.location
+                    counter.update_holding_location()
+
+            if randomize_objects:
+                for ingredient, counter in zip(ingredients, random_counters[len(stations):]):
+                    old_counter: Counter = self.world.get_gridsquare_at(ingredient.location)
+                    old_counter.swap_holding(counter)
 
 
-    def reset(self):
-        self.world = World(arglist=self.arglist)
-        self.recipes = []
-        self.sim_agents = []
-        self.agent_actions = {}
+    def reset(self, reload_level=False):
         self.t = 0
-
+        self.t_0 = 0
+        for a in self.sim_agents:
+            a.reset()
+        for o in self.orders:
+            o.reset(self.t)
+        self.agent_actions = {}
         # For visualizing episode.
         self.rep = []
 
         # For tracking data during an episode.
-        self.collisions = []
-        self.termination_info = ""
+        self.num_deliveries = 0
+        self.num_handovers = 0
+        self.num_collisions = 0
+        self.num_shuffles = 0
+        self.num_invalid_actions = 0
+        self.num_location_repeaters = 0
+        self.num_holding_repeaters = 0
+
         self.successful = False
-
-        # Load world & distances.
+        self.failed = False
+        self.termination_info = ""
+        self.termination_stats = {k: 0 if 'delivery' not in k else self.arglist.max_num_timesteps for k in self.termination_stats.keys()}
+        
+        # load world and level
+        self.world: World = None
+        self.curr_level = random.choice(self.levels).strip() if reload_level else self.curr_level
         self.load_level(
-                level=self.arglist.level,
-                num_agents=self.arglist.num_agents)
-        self.all_subtasks = self.run_recipes()
-        self.world.make_loc_to_gridsquare()
-        self.world.make_reachability_graph()
-        self.cache_distances()
-        self.obs_tm1 = copy.copy(self)
+            level=self.curr_level,
+            num_agents=np.random.randint(1, 5) if all((False, self.arglist.train, self.arglist.randomize)) else self.arglist.num_agents,
+            num_orders=self.arglist.num_orders,
+            randomize=self.arglist.randomize,
+            reload_level=reload_level,
+        )
 
+        # Load distances
+        self.all_subtasks = self.run_recipes() if self.any_bayesian else []
+        self.world.make_loc_to_gridsquare()
+        if self.any_bayesian:
+            self.world.make_reachability_graph()
+            self.cache_distances()
+
+        # for visualization and screenshots
         self.game = GameImage(
-                    filename=self.filename,
-                    world=self.world,
-                    sim_agents=self.sim_agents)
+            filename=self.filename,
+            env_id=self.env_id,
+            world=self.world,
+            sim_agents=self.sim_agents,
+            record=self.arglist.record,
+        )
         self.game.on_init()
 
-        if self.arglist.record or self.arglist.with_image_obs:
-            self.game = GameImage(
-                    filename=self.filename,
-                    world=self.world,
-                    sim_agents=self.sim_agents,
-                    record=self.arglist.record)
-            self.game.on_init()
-            if self.arglist.record:
-                self.game.save_image_obs(self.t)
+        # obs
+        self.obs_tm1 = None
+        self.obs_tm1 = copy.copy(self)  # obs for BD
+        # to track agent activity
+        self.agent_history = {agent.name: deque([self.get_history_repr(agent)], maxlen=11) for agent in self.sim_agents}
+        self.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # obs for RL
 
-        #return self.game.get_image_obs()
-        return copy.copy(self)
+        if self.arglist.record:
+            self.game.save_image_obs(self.t)
+
+        return self.rl_obs
 
     def close(self):
+        if self.game:
+            self.game.on_cleanup()
         return
-
+    
     def step(self, action_dict):
         # Track internal environment info.
+        if self.t == 0:
+            self.t_0 = perf_counter()
+        
         self.t += 1
-        # print("===============================")
-        # print("[environment.step] @ TIMESTEP {}".format(self.t))
-        # print("===============================")
+        self.orders = tuple(self.world.objects.get("Order")) 
 
-        # Get actions.
+        # Parse action
         for sim_agent in self.sim_agents:
-            sim_agent.action = action_dict[sim_agent.name]
+            if sim_agent.name in action_dict:
+                action_idx = action_dict[sim_agent.name]
+                if 0 <= action_idx < len(self.world.NAV_ACTIONS):
+                    sim_agent.action = self.world.NAV_ACTIONS[action_idx]
+                else:
+                    sim_agent.action = (0, 0) # BD has 50% chance of no-op, MAPPO 20% chance
+            self.agent_history[sim_agent.name].append(self.get_history_repr(sim_agent))
 
-        # Check collisions.
-        self.check_collisions()
+        # set current state as previous
+        self.obs_tm1 = None
         self.obs_tm1 = copy.copy(self)
 
-        # Execute.
-        self.execute_navigation()
+        # Check collisions.
+        #self.check_collisions() # stores collisions in self.collisions
+        # Perform interaction
+        self.execute_navigation() # append to agent activity
+        # Compute stats based on agent activity
+        # if self.is_env_prime():
+        #     self.display()
+        #     self.print_agents()
 
-        # Visualize.
-        self.display()
-        # self.print_agents()
+        
+        self.compute_stats()
+        # Count shuffles, handovers, deliveries, invalid actions, location repeaters, holding repeaters
+        if self.arglist.evaluate:
+            self.record_stats() # calculated based on agent activity
+
+        #self.render()
+        
         if self.arglist.record:
             self.game.save_image_obs(self.t)
 
         # Get a plan-representation observation.
-        #new_obs = self.game.get_image_obs() # TODO: more flexible representation returning method ?
         new_obs = copy.copy(self)
+        new_obs.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # NEW rl obs
+        #new_obs.state = self.get_state()  # NEW state
+        # remove redundant variables
+        new_obs.obs_tm1 = None
+        new_obs.game = None
+        new_obs.world = None
+        new_obs.sw = None
 
-        done = self.done()
-        reward = self.reward()
-        info = {"t": self.t, "obs": new_obs, "real_done": self.successful,
-                "done": done, "termination_info": self.termination_info}
+        done = self.done() # CENTRALIZED DONE
+        reward = self.reward() # CENTRALIZED REWARD
+            
+        info = {
+            "t": self.t,
+            "rep": self.get_repr(),
+            "collisions": self.num_collisions,
+            "shuffles": self.num_shuffles,
+            "handovers": self.num_handovers,
+            "deliveries": self.num_deliveries,
+            "invalid_actions": self.num_invalid_actions,
+            "location_repeaters": self.num_location_repeaters,
+            "holding_repeaters": self.num_holding_repeaters,
+            "done": all(done),
+            "reward": sum(reward),
+            "termination_info": self.termination_info,
+        }
+        
+        return new_obs.rl_obs, reward, done, info
 
-        # Get an image observation
-        if self.arglist.with_image_obs:
-            info["image_obs"] = self.game.get_image_obs()
+    def get_state(self):
+        return StateRepr(self.t, self.get_agents_repr(fixed=True), self.get_objects_repr(True))
+        
+    def compute_stats(self, handover_lookback=5, shuffle_lookback=4, location_repeater_lookback=10, location_repeater_threshold=3, holding_repeater_lookback=10, holding_repeater_threshold=3):
+        for agent in self.sim_agents:    
+            self_history = self.agent_history[agent.name]
+            curr = self.agent_history[agent.name][-1]
+            slice = list(self_history)[-10:]
+            # deliveries -- if someone took a deliver action this time step
+            self.num_deliveries += curr.delivered
+            
+            # handovers -- if agent A holding an item previously held by agent B (within lookback) 
+            if self.t > handover_lookback:
+                others_holding_history = {other: [None if _.holding is None else _.holding.spawn_location for _ in list(history)[-handover_lookback:-1]] for other, history in self.agent_history.items() if other != agent.name}
+                spawns = { loc for v in others_holding_history.values() for loc in v }
+                curr.handed_over = curr.holding is not None and (curr.holding.spawn_location in spawns)
+                self.num_handovers += curr.handed_over
+                
+            # collisions -- if someone collided this time step
+            self.num_collisions += curr.collided
 
-        return new_obs, reward, done, info
+            # shuffles -- if an agent has moved to the same location while not having more than one item within the lookback window + 1 for None item
+            if self.t > shuffle_lookback:
+                curr.shuffled = curr.location == self_history[-shuffle_lookback].location and len(set(_.holding.get_repr() if _.holding else None for _ in slice[-shuffle_lookback:])) > 2
+                self.num_shuffles += curr.shuffled
 
+            # invalid actions -- if an agent has collided with a counter or not performed an action this step
+            self.num_invalid_actions += curr.invalid_actor
+
+            # location repeaters -- if an agent has too few new locations within the lookback window
+            if self.t > location_repeater_lookback:
+                curr.location_repeater = len(set(_.location for _ in slice[-location_repeater_lookback:])) < location_repeater_threshold
+                self.num_location_repeaters += curr.location_repeater
+
+            # holding repeaters -- if an agent has too few new items within the lookback window
+            if self.t > holding_repeater_lookback:
+                curr.holding_repeater = len(set(_.holding.get_repr() if _.holding else None for _ in slice[-holding_repeater_lookback:])) < holding_repeater_threshold
+                self.num_holding_repeaters += curr.holding_repeater
+
+
+    def record_stats(self):
+        self.termination_stats['deliveries'] = self.num_deliveries
+        self.termination_stats['handovers'] = self.num_handovers
+        self.termination_stats['collisions'] = self.num_collisions
+        self.termination_stats['shuffles'] = self.num_shuffles
+        self.termination_stats['invalid_actions'] = self.num_invalid_actions
+        self.termination_stats['location_repeaters'] = self.num_location_repeaters
+        self.termination_stats['holding_repeaters'] = self.num_holding_repeaters
+        for i, order in enumerate(self.orders):
+            delivered_on = self.termination_stats[f'order_{i+1}_delivery']
+            self.termination_stats[f'order_{i+1}_delivery'] = self.t if (order.delivered and self.t <= delivered_on) else delivered_on
+
+    def render(self, mode="human"):
+        logger.info(f"""\n=======================================\n[environment-{self.env_id}.step] @ TIMESTEP {self.t}\n=======================================""")
+        self.display()
+        self.print_agents()
+
+    
+    def is_env_prime(self):
+        return self.env_id == 0 or 'eval' in self.env_id or ('_' in self.env_id and self.env_id.split('_')[-1] in ['0', 'eval'])
+
+    def generate_animation(self, t, suffix=""):
+        if self.env_id == 0 or ('_' in self.env_id and self.env_id.split('_')[-1] == '0'):
+            return self.game.generate_animation(suffix)
+        return None
+
+    def get_animation_path(self):
+        if self.is_env_prime():
+            return self.game.get_animation_path()
+        return ""
 
     def done(self):
-        # Done if the episode maxes out
-        if self.t >= self.arglist.max_num_timesteps and self.arglist.max_num_timesteps:
-            self.termination_info = "Terminating because passed {} timesteps".format(
-                    self.arglist.max_num_timesteps)
+        # Done if the episode maxes out (or queue empty) or no state change in past 5 actions
+        if self.t >= self.arglist.max_num_timesteps:
+            self.successful = not any(self.get_remaining_orders())
+            self.failed = not self.successful
+            if self.arglist.record and not self.arglist.train:
+                self.generate_animation(self.t)
+            self.termination_info = self.get_termination_info(reason=f"Terminating because passed {self.arglist.max_num_timesteps} timesteps")
+
+        elif self.early_termination and any([len(self.get_remaining_orders()) == 3 and self.t >= 50, len(self.get_remaining_orders()) == 2 and self.t >= 100, len(self.get_remaining_orders()) == 1 and self.t >= 150]):
             self.successful = False
-            return True
+            self.failed = True
+            if self.arglist.record and not self.arglist.train:
+                self.generate_animation(self.t)
+            self.termination_info = self.get_termination_info(reason=f"Terminating because of early return condition: Not enough orders delivered in past {self.t} timesteps")
+        
+        elif all([order.delivered for order in self.orders]):
+            self.successful = True
+            self.failed = False
+            if self.arglist.record and not self.arglist.train:
+                self.generate_animation(self.t)
+            self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
 
-        assert any([isinstance(subtask, recipe.Deliver) for subtask in self.all_subtasks]), "no delivery subtask"
+        elif self.any_bayesian:
+            assert any([isinstance(subtask, recipe_utils.Deliver) for subtask in self.all_subtasks]), "no delivery subtask"
 
-        # Done if subtask is completed.
-        for subtask in self.all_subtasks:
-            # Double check all goal_objs are at Delivery.
-            if isinstance(subtask, recipe.Deliver):
-                _, goal_obj = nav_utils.get_subtask_obj(subtask)
+            # Done if subtask is completed.
+            
+            if any(isinstance(subtask, recipe_utils.Deliver) or subtask.name == 'Deliver'for subtask in self.all_subtasks):
+                # Double check all goal_objs are at Delivery.
+                self.successful = True
+                
+                for subtask in self.all_subtasks:
+                    _, goal_obj = nav_utils.get_subtask_obj(subtask)
 
-                delivery_loc = list(filter(lambda o: o.name=='Delivery', self.world.get_object_list()))[0].location
-                goal_obj_locs = self.world.get_all_object_locs(obj=goal_obj)
-                if not any([gol == delivery_loc for gol in goal_obj_locs]):
-                    self.termination_info = ""
-                    self.successful = False
-                    return False
+                    delivery_loc = list(filter(lambda o: o.name == "Delivery", self.world.get_object_list()))[0].location
+                    goal_obj_locs = self.world.get_all_object_locs(obj=goal_obj)
+                    if not any([gol == delivery_loc for gol in goal_obj_locs]):
+                        self.successful = False
+                        self.failed = False
 
-        self.termination_info = "Terminating because all deliveries were completed"
-        self.successful = True
-        return True
+                #self.successful = self.successful
+                self.failed = False
+                if self.arglist.record and not self.arglist.train:
+                    self.generate_animation(self.t)
+                self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
+                
+            else:
+                self.successful = True
+                self.failed = False
+                if self.arglist.record and not self.arglist.train:
+                    self.generate_animation(self.t)
+                self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
 
+        done = (([self.successful or self.failed] * len(self.sim_agents)) + self.done_padding)[:self.max_num_agents]
+
+        if all(done):
+            self.termination_stats['episode_length'] = self.t
+            self.termination_stats['episode_duration'] = perf_counter() - self.t_0
+            self.termination_stats['successful'] = self.successful
+            self.termination_stats['failed'] = self.failed
+
+        return done
+    
+    def get_termination_info(self, reason):
+        #logger.info(f"{reason}")
+        return (reason,
+                f"Orders Delivered: {self.termination_stats['deliveries']}",
+                f"Handovers: {self.termination_stats['handovers']}",
+                f"Collisions: {self.termination_stats['collisions']}",
+                f"Shuffles: {self.termination_stats['collisions']}",
+                f"Invalid Actions: {self.termination_stats['invalid_actions']}",
+                f"Repeated Locations: {self.termination_stats['location_repeaters']}",
+                f"Repeated Holdings: {self.termination_stats['holding_repeaters']}",
+                f"Successful: {self.successful}",
+                f"Failed: {self.failed}",
+                f"Recording: {self.game.get_animation_path()}"
+        )
+
+        
     def reward(self):
-        return 1 if self.successful else 0
+        successful = self.successful
+        failed = self.failed
+        timestep = self.t
+        agents = self.sim_agents
+        curr = {a: _[-1] for a, _ in self.agent_history.items()}
+        prev = {a: _[-2] for a, _ in self.agent_history.items()}
+        prev_prev = {a: _[-3] for a, _ in self.agent_history.items()} if self.t > 2 else prev
+        
+        stations = [o for o in self.world.get_object_list() if o.name in ['Cutboard', 'CuttingBoard', 'Stove', 'Grill', 'Delivery']]
+        dynamic_objects = self.world.get_dynamic_object_list()
 
+        orders = self.orders
+        
+        return (RewardHelpers.compute_rewards(successful, failed, timestep, agents, stations, dynamic_objects, orders, curr, prev, prev_prev) + self.reward_padding)[:self.max_num_agents]
+    
+    def get_observation_space_structure(self):
+        max_num_timesteps = 200
+        max_width, max_height = 8, 7 #self.world.width, self.world.height - 1 # -1 to account for the order queue
+        max_num_agents = self.max_num_agents # len(self.sim_agents) # always train for max_num_agents so that we can train on any number of agents
+        # orders and recipe details for this layout
+        max_num_orders = self.max_num_orders # len(self.orders) #always train for max_num_orders so that we can train on any number of orders
+        # all the holdable_objects in the world -- plate, food or dishes
+        max_num_objects = 5 # len(self.world.get_dynamic_objects())
+        # tiles of interest in the world -- prep stations, delivery stations
+        max_num_prep_stations = 2 # len(self.world.objects['Cutboard'])
+        max_num_delivery_stations = 2 # len(self.world.objects['Delivery'])
+        # get spaces.Dict representation of the the world
+        dict_structure = ObservationHelpers.get_observation_space_structure(max_num_timesteps, max_width, max_height, max_num_agents, max_num_orders, max_num_objects, max_num_prep_stations, max_num_delivery_stations)
+        return dict_structure
+
+    def get_image_observation_space_structure(self):
+        image_dims = self.game.get_image_obs().shape if self.game is not None else (240, 200, 3)
+        return spaces.Box(low=0, high=255, shape=image_dims, dtype=np.uint8)
+    
+    def get_rl_obs(self):
+        # get spaces.Dict with value based on the state of the world
+        max_agents = (self.sim_agents + self.agent_padding)[:self.max_num_agents]
+        num_agents = len(self.sim_agents)
+        max_orders = ([_ for _ in self.orders if not _.delivered] + self.order_padding)[:self.max_num_orders]
+        num_orders = len(self.orders)
+        layout = self.curr_level.split('_')[0]
+        
+        obs = ObservationHelpers.get_rl_obs(layout, self.t, max_agents, num_agents, self.world.get_dynamic_object_list(), self.world.objects['Cutboard'], self.world.objects['Delivery'], max_orders, num_orders)
+        
+        return obs
+        
     def print_agents(self):
         for sim_agent in self.sim_agents:
             sim_agent.print_status()
 
     def display(self):
         self.update_display()
-        # print(str(self))
+        logger.info(f'\n{str(self)}\n')
 
     def update_display(self):
         self.rep = self.world.update_display()
@@ -284,20 +666,27 @@ class OvercookedEnvironment(gym.Env):
             x, y = agent.location
             self.rep[y][x] = str(agent)
 
-
     def get_agent_names(self):
-        return [agent.name for agent in self.sim_agents]
+        return tuple(agent.name for agent in self.sim_agents)
+
+    def get_remaining_orders(self):
+        return tuple(order for order in self.orders if not order.delivered)
+
+    def get_delivered_orders(self):
+        return tuple(order for order in self.orders if order.delivered)
 
     def run_recipes(self):
         """Returns different permutations of completing recipes."""
-        self.sw = STRIPSWorld(world=self.world, recipes=self.recipes)
+        self.sw = STRIPSWorld(world=self.world)
         # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions
-        subtasks = self.sw.get_subtasks(max_path_length=self.arglist.max_num_subtasks)
+        subtasks = self.sw.get_subtasks(recipe__=self.get_remaining_orders()[0].recipe, max_path_length=self.arglist.max_num_subtasks)
         all_subtasks = [subtask for path in subtasks for subtask in path]
-        # print('Subtasks:', all_subtasks, '\n')
+        #print("Subtasks:", all_subtasks, "\n")
         return all_subtasks
 
-    def get_AB_locs_given_objs(self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj):
+    def get_AB_locs_given_objs(
+        self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj
+    ):
         """Returns list of locations relevant for subtask's Merge operator.
 
         See Merge operator formalism in our paper, under Fig. 11:
@@ -305,46 +694,79 @@ class OvercookedEnvironment(gym.Env):
 
         # For Merge operator on Chop subtasks, we look at objects that can be
         # chopped and the cutting board objects.
-        if isinstance(subtask, recipe.Chop):
+        if isinstance(subtask, recipe_utils.Chop):
             # A: Object that can be chopped.
-            A_locs = self.world.get_object_locs(obj=start_obj, is_held=False) + list(map(lambda a: a.location,\
-                list(filter(lambda a: a.name in subtask_agent_names and a.holding == start_obj, self.sim_agents))))
+            A_locs = self.world.get_object_locs(obj=start_obj, is_held=False) + list(
+                map(
+                    lambda a: a.location,
+                    list(
+                        filter(
+                            lambda a: a.name in subtask_agent_names
+                            and a.holding == start_obj,
+                            self.sim_agents,
+                        )
+                    ),
+                )
+            )
 
             # B: Cutboard objects.
             B_locs = self.world.get_all_object_locs(obj=subtask_action_obj)
 
         # For Merge operator on Deliver subtasks, we look at objects that can be
         # delivered and the Delivery object.
-        elif isinstance(subtask, recipe.Deliver):
+        elif isinstance(subtask, recipe_utils.Deliver):
             # B: Delivery objects.
             B_locs = self.world.get_all_object_locs(obj=subtask_action_obj)
 
             # A: Object that can be delivered.
-            A_locs = self.world.get_object_locs(
-                    obj=start_obj, is_held=False) + list(
-                            map(lambda a: a.location, list(
-                                filter(lambda a: a.name in subtask_agent_names and a.holding == start_obj, self.sim_agents))))
+            A_locs = self.world.get_object_locs(obj=start_obj, is_held=False) + list(
+                map(
+                    lambda a: a.location,
+                    list(
+                        filter(
+                            lambda a: a.name in subtask_agent_names
+                            and a.holding == start_obj,
+                            self.sim_agents,
+                        )
+                    ),
+                )
+            )
             A_locs = list(filter(lambda a: a not in B_locs, A_locs))
 
         # For Merge operator on Merge subtasks, we look at objects that can be
         # combined together. These objects are all ingredient objects (e.g. Tomato, Lettuce).
-        elif isinstance(subtask, recipe.Merge):
-            A_locs = self.world.get_object_locs(
-                    obj=start_obj[0], is_held=False) + list(
-                            map(lambda a: a.location, list(
-                                filter(lambda a: a.name in subtask_agent_names and a.holding == start_obj[0], self.sim_agents))))
-            B_locs = self.world.get_object_locs(
-                    obj=start_obj[1], is_held=False) + list(
-                            map(lambda a: a.location, list(
-                                filter(lambda a: a.name in subtask_agent_names and a.holding == start_obj[1], self.sim_agents))))
+        elif isinstance(subtask, recipe_utils.Merge):
+            A_locs = self.world.get_object_locs(obj=start_obj[0], is_held=False) + list(
+                map(
+                    lambda a: a.location,
+                    list(
+                        filter(
+                            lambda a: a.name in subtask_agent_names
+                            and a.holding == start_obj[0],
+                            self.sim_agents,
+                        )
+                    ),
+                )
+            )
+            B_locs = self.world.get_object_locs(obj=start_obj[1], is_held=False) + list(
+                map(
+                    lambda a: a.location,
+                    list(
+                        filter(
+                            lambda a: a.name in subtask_agent_names
+                            and a.holding == start_obj[1],
+                            self.sim_agents,
+                        )
+                    ),
+                )
+            )
 
         else:
             return [], []
 
         return A_locs, B_locs
 
-    def get_lower_bound_for_subtask_given_objs(
-            self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj):
+    def get_lower_bound_for_subtask_given_objs(self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj):
         """Return the lower bound distance (shortest path) under this subtask between objects."""
         assert len(subtask_agent_names) <= 2, 'passed in {} agents but can only do 1 or 2'.format(len(agents))
 
@@ -354,7 +776,7 @@ class OvercookedEnvironment(gym.Env):
             if agent.name in subtask_agent_names:
                 # Check for whether the agent is holding something.
                 if agent.holding is not None:
-                    if isinstance(subtask, recipe.Merge):
+                    if isinstance(subtask, recipe_utils.Merge):
                         continue
                     else:
                         if agent.holding != start_obj and agent.holding != goal_obj:
@@ -371,10 +793,9 @@ class OvercookedEnvironment(gym.Env):
                 start_obj=start_obj,
                 goal_obj=goal_obj,
                 subtask_action_obj=subtask_action_obj)
-
         # Add together distance and holding_penalty.
         return self.world.get_lower_bound_between(
-                subtask=subtask,
+                subtask_name=subtask.name,
                 agent_locs=tuple(agent_locs),
                 A_locs=tuple(A_locs),
                 B_locs=tuple(B_locs)) + holding_penalty
@@ -408,8 +829,7 @@ class OvercookedEnvironment(gym.Env):
                 execute[1] = False
 
         # Prevent agents from swapping places.
-        elif ((agent1_loc == agent2_next_loc) and
-                (agent2_loc == agent1_next_loc)):
+        elif (agent1_loc == agent2_next_loc) and (agent2_loc == agent1_next_loc):
             execute[0] = False
             execute[1] = False
         return execute
@@ -424,10 +844,11 @@ class OvercookedEnvironment(gym.Env):
         for i, j in combinations(range(len(self.sim_agents)), 2):
             agent_i, agent_j = self.sim_agents[i], self.sim_agents[j]
             exec_ = self.is_collision(
-                    agent1_loc=agent_i.location,
-                    agent2_loc=agent_j.location,
-                    agent1_action=agent_i.action,
-                    agent2_action=agent_j.action)
+                agent1_loc=agent_i.location,
+                agent2_loc=agent_j.location,
+                agent1_action=agent_i.action,
+                agent2_action=agent_j.action,
+            )
 
             # Update exec array and set path to do nothing.
             if not exec_[0]:
@@ -435,31 +856,37 @@ class OvercookedEnvironment(gym.Env):
             if not exec_[1]:
                 execute[j] = False
 
-            # Track collisions.
-            if not all(exec_):
-                collision = CollisionRepr(
-                        time=self.t,
-                        agent_names=[agent_i.name, agent_j.name],
-                        agent_locations=[agent_i.location, agent_j.location])
-                self.collisions.append(collision)
-
-        # print('\nexecute array is:', execute)
+        # print(f'\nexecute array is: {execute}')
 
         # Update agents' actions if collision was detected.
         for i, agent in enumerate(self.sim_agents):
+            # print("{} has action {}".format(color(agent.name, agent.color), agent.action))
             if not execute[i]:
                 agent.action = (0, 0)
-            # print("{} has action {}".format(color(agent.name, agent.color), agent.action))
-
+                self.agent_history[agent.name][-1].collided=True
+                
     def execute_navigation(self):
         for agent in self.sim_agents:
-            interact(agent=agent, world=self.world)
+            interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
+            # add to agent history
+            ah = self.agent_history[agent.name][-1]
+            ah.action_type =interaction.action_type
+            ah.delivered = interaction.action_type == "Deliver"
+            ah.invalid_actor = (interaction.action_type == "Wait" and agent.action != (0, 0) and not ah.collided)
+            ah.holding = agent.holding if agent.holding is not None else None
+            ah.location = agent.location
             self.agent_actions[agent.name] = agent.action
-
 
     def cache_distances(self):
         """Saving distances between world objects."""
-        counter_grid_names = [name for name in self.world.objects if "Supply" in name or "Counter" in name or "Delivery" in name or "Cut" in name]
+        counter_grid_names = [
+            name
+            for name in self.world.objects
+            if "Supply" in name
+            or "Counter" in name
+            or "Delivery" in name
+            or "Cut" in name
+        ]
         # Getting all source objects.
         source_objs = copy.copy(self.world.objects["Floor"])
         for name in counter_grid_names:
@@ -476,12 +903,18 @@ class OvercookedEnvironment(gym.Env):
             for destination in dest_objs:
                 # Possible edges to approach source and destination.
                 source_edges = [(0, 0)] if not source.collidable else World.NAV_ACTIONS
-                destination_edges = [(0, 0)] if not destination.collidable else World.NAV_ACTIONS
+                destination_edges = (
+                    [(0, 0)] if not destination.collidable else World.NAV_ACTIONS
+                )
                 # Maintain shortest distance.
                 shortest_dist = np.inf
                 for source_edge, dest_edge in product(source_edges, destination_edges):
                     try:
-                        dist = nx.shortest_path_length(self.world.reachability_graph, (source.location,source_edge), (destination.location, dest_edge))
+                        dist = nx.shortest_path_length(
+                            self.world.reachability_graph,
+                            (source.location, source_edge),
+                            (destination.location, dest_edge),
+                        )
                         # Update shortest distance.
                         if dist < shortest_dist:
                             shortest_dist = dist
@@ -493,3 +926,8 @@ class OvercookedEnvironment(gym.Env):
         # Save all distances under world as well.
         self.world.distances = self.distances
 
+    def seed(self, seed=None):
+        if seed is None:
+            random.seed(1)
+        else:
+            random.seed(seed)

@@ -1,10 +1,12 @@
-from utils.core import *
 import recipe_planner.utils as recipe
+
+from itertools import combinations
 
 
 class Recipe:
-    def __init__(self, name):
+    def __init__(self, name, rep = 'R'):
         self.name = name
+        self.rep = rep
         self.contents = []
         self.actions = set()
         self.actions.add(recipe.Get('Plate'))
@@ -12,7 +14,14 @@ class Recipe:
     def __str__(self):
         return self.name
 
+    def __eq__(self, other):
+        return self.rep == other.rep
+
+    def __hash__(self):
+        return hash(self.rep)
+    
     def add_ingredient(self, item):
+        from utils.core import FoodSequence
         self.contents.append(item)
 
         # always starts with FRESH
@@ -26,8 +35,10 @@ class Recipe:
     def add_goal(self):
         self.contents = sorted(self.contents, key = lambda x: x.name)   # list of Food objects
         self.contents_names = [c.name for c in self.contents]   # list of strings
+        self.full_contents_names = [c.full_name for c in self.contents]   # list of strings
         self.full_name = '-'.join(sorted(self.contents_names))   # string
-        self.full_plate_name = '-'.join(sorted(self.contents_names + ['Plate']))   # string
+        self.full_plate_name = '-'.join(sorted(self.contents_names + ['Plate'])) # string
+        self.delivery_name = '-'.join(sorted(self.full_contents_names)) # name of graphic file
         self.goal = recipe.Delivered(self.full_plate_name)
         self.actions.add(recipe.Deliver(self.full_plate_name))
 
@@ -65,23 +76,30 @@ class Recipe:
                             [recipe.Merged(plate_str), recipe.Merged(rem_str)], None))
                         self.actions.add(recipe.Merge(item, rem_plate_str))
 
+
+    def takes_plate(self):
+        return 'Plate' in self.full_plate_name
+
 class SimpleTomato(Recipe):
     def __init__(self):
-        Recipe.__init__(self, 'Tomato')
+        from utils.core import  Tomato
+        Recipe.__init__(self, 'Tomafrom recipe_planner import Recipeto', 'T')
         self.add_ingredient(Tomato(state_index=-1))
         self.add_goal()
         self.add_merge_actions()
 
 class SimpleLettuce(Recipe):
     def __init__(self):
-        Recipe.__init__(self, 'Lettuce')
+        Recipe.__init__(self, 'Lettuce', 'L')
+        from utils.core import Lettuce
         self.add_ingredient(Lettuce(state_index=-1))
         self.add_goal()
         self.add_merge_actions()
 
 class Salad(Recipe):
     def __init__(self):
-        Recipe.__init__(self, 'Salad')
+        Recipe.__init__(self, 'Salad', 'S')
+        from utils.core import  Tomato,Lettuce
         self.add_ingredient(Tomato(state_index=-1))
         self.add_ingredient(Lettuce(state_index=-1))
         self.add_goal()
@@ -89,11 +107,10 @@ class Salad(Recipe):
 
 class OnionSalad(Recipe):
     def __init__(self):
-        Recipe.__init__(self, 'OnionSalad')
+        Recipe.__init__(self, 'OnionSalad', 'O')
+        from utils.core import  Tomato,Lettuce,Onion
         self.add_ingredient(Tomato(state_index=-1))
         self.add_ingredient(Lettuce(state_index=-1))
         self.add_ingredient(Onion(state_index=-1))
         self.add_goal()
         self.add_merge_actions()
-
-

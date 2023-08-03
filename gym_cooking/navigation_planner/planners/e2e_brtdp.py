@@ -1,4 +1,5 @@
 # Recipe planning
+from utils.utils import timeit
 from recipe_planner.utils import *
 
 # Navigation planning
@@ -83,7 +84,7 @@ class E2E_BRTDP:
         copy_.__dict__ = self.__dict__.copy()
         return copy_
 
-    @lru_cache(maxsize=10000)
+    @lru_cache(maxsize=10_000)
     def T(self, state_repr, action):
         """Return next states when taking action from state."""
         state = self.repr_to_env_dict[state_repr]
@@ -95,19 +96,18 @@ class E2E_BRTDP:
             sim_state = copy.copy(state)
             sim_agent = list(filter(lambda a: a.name == agent.name, sim_state.sim_agents))[0]
             sim_agent.action = action
-            interact(agent=sim_agent,
-                     world=sim_state.world)
+            interact(agent=sim_agent, world=sim_state.world)
 
         # Joint
         else:
             agent_1, agent_2 = subtask_agents
             sim_state = copy.copy(state)
-            sim_agent_1 = list(filter(lambda a: a.name == agent_1.name, sim_state.sim_agents))[0]
-            sim_agent_2 = list(filter(lambda a: a.name == agent_2.name, sim_state.sim_agents))[0]
+            sim_agent_1 = [a for a in sim_state.sim_agents if a.name == agent_1.name][0]
+            sim_agent_2 = [a for a in sim_state.sim_agents if a.name == agent_2.name][0]
             sim_agent_1.action, sim_agent_2.action = action
             interact(agent=sim_agent_1, world=sim_state.world)
             interact(agent=sim_agent_2, world=sim_state.world)
-            assert sim_agent_1.location != sim_agent_2.location, 'action {} led to state {}'.format(action, sim_state.get_repr())
+            assert sim_agent_1.location != sim_agent_2.location, f'action {action} led to state {sim_state.get_repr()}'
 
         # Track this state in value function and repr dict
         # if it's a new state.
@@ -150,15 +150,14 @@ class E2E_BRTDP:
 
     def runSampleTrial(self):
         """runSampleTrial from BRTDP paper."""
-        start_time = time.time()
         x = self.start
         traj = nav_utils.Stack()
 
         # Terminating if this takes too long e.g. path is infeasible.
         counter = 0
-        start_repr = self.start.get_repr()
-        diff = self.v_u[(start_repr, self.subtask)] - self.v_l[(start_repr, self.subtask)]
-        print("DIFF AT START: {}".format(diff))
+        start_repr = self.repr_mapper(self.start.get_repr())
+        diff = self.v_u[(self.subtask.name, self.subtask.args, start_repr)] - self.v_l[(self.subtask.name, self.subtask.args, start_repr)]
+        # print("DIFF AT START: {}".format(diff))
 
         while True:
             counter += 1
@@ -167,14 +166,14 @@ class E2E_BRTDP:
             traj.push(x)
 
             # Get repr of current environment state.
-            x_repr = x.get_repr()
+            x_repr = self.repr_mapper(x.get_repr())
 
             # Get the planner state. If Planner Level is 1, then
             # modified_state will include the most likely actions of the
             # other agents. Otherwise, the modified_state will be the same
             # as state `x`.
             modified_state, other_agent_actions = self._get_modified_state_with_other_agent_actions(x)
-            modified_state_repr = modified_state.get_repr()
+            modified_state_repr = self.repr_mapper(modified_state.get_repr())
 
             # Get available actions from this state.
             actions = self.get_actions(state_repr=modified_state_repr)
@@ -183,7 +182,7 @@ class E2E_BRTDP:
             new_upper = min([
                 self.Q(state=modified_state, action=a, value_f=self.v_u)
                 for a in actions])
-            self.v_u[(modified_state_repr, self.subtask)] = new_upper
+            self.v_u[(self.subtask.name, self.subtask.args, modified_state_repr)] = new_upper
 
             action_index = argmin([
                 self.Q(state=modified_state, action=a, value_f=self.v_l)
@@ -191,63 +190,63 @@ class E2E_BRTDP:
             a = actions[action_index]
 
             new_lower = self.Q(state=modified_state, action=a, value_f=self.v_l)
-            self.v_l[(modified_state_repr, self.subtask)] = new_lower
+            self.v_l[(self.subtask.name, self.subtask.args, modified_state_repr)] = new_lower
 
             b = self.get_expected_diff(modified_state, a)
             B = sum(b.values())
-            diff = (self.v_u[(start_repr, self.subtask)] - self.v_l[(start_repr, self.subtask)])/self.tau
+            diff = (self.v_u[(self.subtask.name, self.subtask.args, start_repr)] - self.v_l[(self.subtask.name, self.subtask.args, start_repr)])/self.tau
             if (B <= diff):
                 break
 
-            x = self.repr_to_env_dict[list(b.keys())[0]]
+            x = self.repr_to_env_dict[tuple(b.keys())[0]]
 
             # Track this new state in repr dict and value function
             # if it's new.
             self.repr_init(env_state=x)
             self.value_init(env_state=x)
 
-        print("RUN SAMPLE EXPLORED {} STATES, took {}".format(len(traj), time.time()-start_time))
+        # print("RUN SAMPLE EXPLORED {} STATES, took {}".format(len(traj), time.time()-start_time))
         while not(traj.empty()):
             x = traj.pop()
-            x_repr = x.get_repr()
+            x_repr = self.repr_mapper(x.get_repr())
             actions = self.get_actions(state_repr=x_repr)
-            self.v_u[(x_repr, self.subtask)] = min([
+            self.v_u[(self.subtask.name, self.subtask.args, x_repr)] = min([
                 self.Q(state=x, action=a, value_f=self.v_u) for a in actions])
-            self.v_l[(x_repr, self.subtask)] = min([
+            self.v_l[(self.subtask.name, self.subtask.args, x_repr)] = min([
                 self.Q(state=x, action=a, value_f=self.v_l) for a in actions])
 
     def main(self):
         """Main loop function for BRTDP."""
         main_counter = 0
-        start_repr = self.start.get_repr()
+        start_repr = self.repr_mapper(self.start.get_repr())
 
-        upper = self.v_u[(start_repr, self.subtask)]
-        lower = self.v_l[(start_repr, self.subtask)]
+        upper = self.v_u[(self.subtask.name, self.subtask.args, start_repr)]
+        lower = self.v_l[(self.subtask.name, self.subtask.args, start_repr)]
         diff = upper - lower
 
         # Run until convergence or until you max out on iteration
         while (diff > self.alpha) and (main_counter < self.main_cap):
-            print('\nstarting main loop #', main_counter)
-            new_upper = self.v_u[(start_repr, self.subtask)]
-            new_lower = self.v_l[(start_repr, self.subtask)]
+            #print('\nstarting main loop #', main_counter)
+            new_upper = self.v_u[(self.subtask.name, self.subtask.args, start_repr)]
+            new_lower = self.v_l[(self.subtask.name, self.subtask.args, start_repr)]
             new_diff = new_upper - new_lower
             if new_diff > diff + 0.01:
                 self.start.update_display()
                 self.start.display()
                 self.start.print_agents()
-                print('old: upper {}, lower {}'.format(upper, lower))
-                print('new: upper {}, lower {}'.format(new_upper, new_lower))
+                #print('old: upper {}, lower {}'.format(upper, lower))
+                #print('new: upper {}, lower {}'.format(new_upper, new_lower))
             diff = new_diff
             upper = new_upper
             lower = new_lower
             main_counter +=1
-            print('diff = {}, self.alpha = {}'.format(diff, self.alpha))
+            #print('diff = {}, self.alpha = {}'.format(diff, self.alpha))
             self.runSampleTrial()
 
     def _configure_planner_level(self, env, subtask_agent_names, other_agent_planners):
         """Configure the planner s.t. it best responds to other agents as needed.
 
-        If other_agent_planners is an emtpy dict, then this planner should
+        If other_agent_planners is an empty dict, then this planner should
         be a level-0 planner and remove all irrelevant agents in env.
 
         Otherwise, it should keep all agents and maintain their planners
@@ -328,27 +327,20 @@ class E2E_BRTDP:
 
     def _configure_planner_space(self, subtask_agent_names):
         """Configure planner to either plan in joint space or single-agent space."""
-        assert len(subtask_agent_names) <= 2, "Cannot have more than 2 agents! Hm... {}".format(subtask_agents)
+        assert len(subtask_agent_names) <= 2, "Cannot have more than 2 agents! Hm... {}".format(subtask_agent_names)
 
         self.is_joint = len(subtask_agent_names) == 2
 
     def set_settings(self, env, subtask, subtask_agent_names, other_agent_planners={}):
         """Configure planner."""
         # Configuring the planner level.
-        self._configure_planner_level(
-                env=env,
-                subtask_agent_names=subtask_agent_names,
-                other_agent_planners=other_agent_planners)
+        self._configure_planner_level(env=env, subtask_agent_names=subtask_agent_names, other_agent_planners=other_agent_planners)
 
         # Configuring subtask related information.
-        self._configure_subtask_information(
-                subtask=subtask,
-                subtask_agent_names=subtask_agent_names)
+        self._configure_subtask_information(subtask=subtask, subtask_agent_names=subtask_agent_names)
 
         # Defining what the goal is for this planner.
-        self._define_goal_state(
-                env=env,
-                subtask=subtask)
+        self._define_goal_state(env=env, subtask=subtask)
 
         # Defining the space of the planner (joint or single).
         self._configure_planner_space(subtask_agent_names=subtask_agent_names)
@@ -367,14 +359,14 @@ class E2E_BRTDP:
     def get_subtask_agents(self, env_state):
         """Return subtask agent for this planner given state."""
         subtask_agents = list(filter(lambda a: a.name in self.subtask_agent_names, env_state.sim_agents))
-
-        assert list(map(lambda a: a.name, subtask_agents)) == list(self.subtask_agent_names), "subtask agent names are not in order: {} != {}".format(list(map(lambda a: a.name, subtask_agents)), self.subtask_agent_names)
+        assert tuple([a.name for a in subtask_agents]) == self.subtask_agent_names, "subtask agent names are not in order: {} != {}".format([a.name for a in subtask_agents], self.subtask_agent_names)
 
         return subtask_agents
 
     def repr_init(self, env_state):
         """Initialize repr for environment state."""
-        es_repr = env_state.get_repr()
+        es_repr = self.repr_mapper(env_state.get_repr())
+
         if es_repr not in self.repr_to_env_dict:
             self.repr_to_env_dict[es_repr] = copy.copy(env_state)
         return es_repr
@@ -382,15 +374,16 @@ class E2E_BRTDP:
     def value_init(self, env_state):
         """Initialize value for environment state."""
         # Skip if already initialized.
-        es_repr = env_state.get_repr()
-        if ((es_repr, self.subtask) in self.v_l and
-            (es_repr, self.subtask) in self.v_u):
+        es_repr = self.repr_mapper(env_state.get_repr())
+        
+        if ((self.subtask.name, self.subtask.args, es_repr) in self.v_l and
+            (self.subtask.name, self.subtask.args, es_repr) in self.v_u):
             return
 
         # Goal state has value 0.
         if self.is_goal_state(es_repr):
-            self.v_l[(es_repr, self.subtask)] = 0.0
-            self.v_u[(es_repr, self.subtask)] = 0.0
+            self.v_l[(self.subtask.name, self.subtask.args, es_repr)] = 0.0
+            self.v_u[(self.subtask.name, self.subtask.args, es_repr)] = 0.0
             return
 
         # Determine lower bound on this environment state.
@@ -401,14 +394,13 @@ class E2E_BRTDP:
                 goal_obj=self.goal_obj,
                 subtask_action_obj=self.subtask_action_obj)
 
-        subtask_agents = self.get_subtask_agents(env_state=env_state)
         lower = lower * (self.time_cost + self.action_cost)
 
         # By BRTDP assumption, this should never be negative.
         assert lower > 0, "lower: {}, {}, {}".format(lower, env_state.display(), env_state.print_agents())
 
-        self.v_l[(es_repr, self.subtask)] = lower - 1.09
-        self.v_u[(es_repr, self.subtask)] = lower * 5 * (self.time_cost + self.action_cost)
+        self.v_l[(self.subtask.name, self.subtask.args, es_repr)] = lower - 1.09
+        self.v_u[(self.subtask.name, self.subtask.args, es_repr)] = lower * 5 * (self.time_cost + self.action_cost)
 
 
     def Q(self, state, action, value_f):
@@ -427,7 +419,7 @@ class E2E_BRTDP:
         ns_repr = self.repr_init(env_state=next_state)
         self.value_init(env_state=next_state)
 
-        expected_value = 1.0 * value_f[(ns_repr, self.subtask)]
+        expected_value = 1.0 * value_f[(self.subtask.name, self.subtask.args, ns_repr)]
         return float(cost + expected_value)
 
     def V(self, state, _type):
@@ -465,14 +457,14 @@ class E2E_BRTDP:
 
     def get_expected_diff(self, start_state, action):
         # Get next state.
-        s_ = self.T(state_repr=start_state.get_repr(), action=action)
+        s_ = self.T(state_repr=self.repr_mapper(start_state.get_repr()), action=action)
 
         # Initialize state if it's new.
         s_repr = self.repr_init(env_state=s_)
         self.value_init(env_state=s_)
 
         # Get expected diff.
-        b = {s_repr: 1.0 * (self.v_u[(s_repr, self.subtask)] - self.v_l[(s_repr, self.subtask)])}
+        b = {s_repr: 1.0 * (self.v_u[(self.subtask.name, self.subtask.args, s_repr)] - self.v_l[(self.subtask.name, self.subtask.args, s_repr)])}
         return b
 
     def _get_modified_state_with_other_agent_actions(self, state):
@@ -504,7 +496,7 @@ class E2E_BRTDP:
             assert other_planner.planner_level == PlannerLevel.LEVEL0
 
             # Figure out what their most likely action is.
-            possible_actions = other_planner.get_actions(state_repr=other_planner.start.get_repr())
+            possible_actions = other_planner.get_actions(state_repr=self.repr_mapper(other_planner.start.get_repr()))
             greedy_action = possible_actions[
                     argmin([other_planner.Q(state=other_planner.start,
                                             action=action,
@@ -527,9 +519,8 @@ class E2E_BRTDP:
 
     def get_next_action(self, env, subtask, subtask_agent_names, other_agent_planners):
         """Return next action."""
-        print("-------------[e2e]-----------")
+        #print("-------------[e2e]-----------")
         self.removed_object = None
-        start_time = time.time()
 
         # Configure planner settings.
         self.set_settings(
@@ -541,33 +532,36 @@ class E2E_BRTDP:
         cur_state, other_agent_actions = self._get_modified_state_with_other_agent_actions(state=self.start)
 
         # BRTDP main loop.
-        actions = self.get_actions(state_repr=cur_state.get_repr())
+        actions = self.get_actions(state_repr=self.repr_mapper(cur_state.get_repr()))
         action_index = argmin([
             self.Q(state=cur_state, action=a, value_f=self.v_l)
             for a in actions])
         a = actions[action_index]
         B = sum(self.get_expected_diff(cur_state, a).values())
-        diff = (self.v_u[(cur_state.get_repr(), self.subtask)] - self.v_l[(cur_state.get_repr(), self.subtask)])/self.tau
+        diff = (self.v_u[(self.subtask.name, self.subtask.args, self.repr_mapper(cur_state.get_repr()))] - self.v_l[(self.subtask.name, self.subtask.args, self.repr_mapper(cur_state.get_repr()))])/self.tau
         self.cur_state = cur_state
         if (B > diff):
-            print('exploring, B: {}, diff: {}'.format(B, diff))
+            #print('exploring, B: {}, diff: {}'.format(B, diff))
             self.main()
 
         # Determine best action after BRTDP.
-        if self.is_goal_state(cur_state.get_repr()):
+        if self.is_goal_state(self.repr_mapper(cur_state.get_repr())):
             print('already at goal state, self.cur_obj_count:', self.cur_obj_count)
             return None
         else:
-            actions = self.get_actions(state_repr=cur_state.get_repr())
+            actions = self.get_actions(state_repr=self.repr_mapper(cur_state.get_repr()))
             qvals = [self.Q(state=cur_state, action=a, value_f=self.v_l)
                     for a in actions]
-            print([x for x in zip(actions, qvals)])
-            print('upper is', self.v_u[(cur_state.get_repr(), self.subtask)])
-            print('lower is', self.v_l[(cur_state.get_repr(), self.subtask)])
+            #print([x for x in zip(actions, qvals)])
+            #print('upper is', self.v_u[(self.subtask.name, self.subtask.args, self.repr_mapper(cur_state.get_repr()))])
+            #print('lower is', self.v_l[(self.subtask.name, self.subtask.args, self.repr_mapper(cur_state.get_repr()))])
 
             action_index = argmin(np.array(qvals))
             a = actions[action_index]
 
-            print('chose action:', a)
-            print('cost:', self.cost(cur_state, a))
+            #print('chose action:', a)
+            #print('cost:', self.cost(cur_state, a))
             return a
+
+    def repr_mapper(self, env_state_repr):
+        return sum(tuple((a.name, a.location) for a in env_state_repr), ())

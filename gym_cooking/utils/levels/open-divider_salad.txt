@@ -6,9 +6,10 @@
 -     p
 -----p-
 
-Salad
+SimpleTomato
 
 2 1
 4 1
 4 4
 2 4
+3 3

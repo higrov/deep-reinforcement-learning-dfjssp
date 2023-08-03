@@ -21,7 +21,7 @@ class GamePlay(Game):
         self.save_dir = 'misc/game/screenshots'
         if not os.path.exists(self.save_dir):
             os.makedirs(self.save_dir)
-
+        self.current_agent = self.sim_agents[0]
         # tally up all gridsquare types
         self.gridsquares = []
         self.gridsquare_types = defaultdict(set) # {type: set of coordinates of that type}
@@ -37,9 +37,10 @@ class GamePlay(Game):
         elif event.type == pygame.KEYDOWN:
             # Save current image
             if event.key == pygame.K_RETURN:
-                image_name = '{}_{}.png'.format(self.filename, datetime.now().strftime('%m-%d-%y_%H-%M-%S'))
-                pygame.image.save(self.screen, '{}/{}'.format(self.save_dir, image_name))
-                print('just saved image {} to {}'.format(image_name, self.save_dir))
+                ts = datetime.now().strftime('%m-%d-%y_%H-%M-%S')
+                image_name = f'{self.filename}_{ts}.png'
+                pygame.image.save(self.screen, f'{self.save_dir}/{image_name}')
+                print(f'just saved image {image_name} to {self.save_dir}')
                 return
             
             # Switch current agent
@@ -55,7 +56,7 @@ class GamePlay(Game):
             if event.key in KeyToTuple.keys():
                 action = KeyToTuple[event.key]
                 self.current_agent.action = action
-                interact(self.current_agent, self.world)
+                interact(self.current_agent, self.world, play=True)
 
     def on_execute(self):
         if self.on_init() == False:

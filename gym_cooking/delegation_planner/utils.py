@@ -1,6 +1,5 @@
 from collections import namedtuple
 import numpy as np
-import scipy as sp
 import random
 from utils.utils import agent_settings
 
@@ -14,8 +13,6 @@ class SubtaskAllocDistribution():
         if len(subtask_allocs) == 0:
             return
         prior = 1./(len(subtask_allocs))
-        print('set prior', prior)
-
         for subtask_alloc in subtask_allocs:
             self.probs[tuple(subtask_alloc)] = prior
 
@@ -25,6 +22,7 @@ class SubtaskAllocDistribution():
             s += str(subtask_alloc) + ': ' + str(p) + '\n'
         return s
 
+    
     def enumerate_subtask_allocs(self):
         return list(self.probs.keys())
 
@@ -38,10 +36,11 @@ class SubtaskAllocDistribution():
         if len(self.probs) > 0:
             max_prob = max(self.probs.values())
             max_subtask_allocs = [subtask_alloc for subtask_alloc, p in self.probs.items() if p == max_prob]
-            return random.choice(max_subtask_allocs)
+            max_subtask_allocs.sort(key=lambda x: x[0].subtask.specs if x[0].subtask is not None and x[0].subtask.specs is not None else "")
+            return max_subtask_allocs[0] if any(max_subtask_allocs) else None
         return None
 
-    def get_max_bucketed(self):
+    def get_max_bucketed(self, agent_name):
         subtasks = []
         probs = []
         for subtask_alloc, p in self.probs.items():

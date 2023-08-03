@@ -1,20 +1,15 @@
 #!/bin/bash
 
-levels=("full-divider_salad" "partial-divider_salad" "open-divider_salad" "full-divider_tomato" "partial-divider_tomato" "open-divider_tomato" "full-divider_tl" "partial-divider_tl" "open-divider_tl")
+levels=("open-divider_salad", "partial-divider_salad" "full-divider_salad" "block-divider_salad" "ring-divider_salad" "open-divider_onion-salad" "block-divider_onion-salad")
 
-models=("bd" "dc" "fb" "up" "greedy")
+#levels=("open-divider_salad", "partial-divider_salad" "full-divider_salad" "cross-divider_salad", "block-divider_salad", "ring-divider_salad" "open-divider_onion-salad" "block-divider_onion-salad")
 
-nagents=2
-nseed=20
+nagents=1
+config="evaluation/1x3"
 
-for seed in $(seq 1 1 $nseed); do
-    for level in "${levels[@]}"; do
-        for model1 in "${models[@]}"; do
-            for model2 in "${models[@]}"; do
-                echo python main.py --num-agents $nagents --seed $seed --level $level --model1 $model1 --model2 $model2
-                python main.py --num-agents $nagents --seed $seed --level $level --model1 $model1 --model2 $model2
-                sleep 5
-            done
-        done
+for level in "${levels[@]}"; do
+    echo python main.py --config $config --num-agents $nagents --level $level
+    python main.py --num-agents $nagents --level $level
+    sleep 5
     done
 done
