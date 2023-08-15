@@ -104,6 +104,7 @@ class World:
         # plt.figure()
         # nx.draw(self.reachability_graph)
         # plt.show()
+    
     def get_lower_bound_between(self, subtask_name, agent_locs, A_locs, B_locs):
         """Return distance lower bound between subtask-relevant locations."""
         lower_bound = self.perimeter + 1

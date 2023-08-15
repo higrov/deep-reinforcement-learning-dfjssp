@@ -1,4 +1,5 @@
 from asyncio.log import logger
+import asyncio
 import logging
 from utils.world import World
 from utils.core import *
@@ -6,7 +7,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-ACTION_TYPE = ("Wait", "Move", "Get", "Chop", "Drop", "Merge", "Deliver","Teleport")
+ACTION_TYPE = ("Wait", "Move", "Get", "Chop", "Drop", "Merge", "Deliver")
 ActionRepr = namedtuple("ActionRepr", "agent agent_location action_type object")
 
 is_dish = lambda recipes, x: any(r.full_plate_name == x.name for r in recipes)
@@ -19,8 +20,9 @@ def interact(agent, world: World, t=-1, play=False):
     """
     # agent does nothing
     if agent.action == (0, 0):
-        return ActionRepr(agent.name, agent.location, "Wait", agent.location, agent.holding)
+        return ActionRepr(agent.name, agent.location, "Wait", agent.holding)
     
+    interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
 
     #if action is holding nothing
     if agent.holding is None: 
@@ -33,95 +35,103 @@ def interact(agent, world: World, t=-1, play=False):
             #Action is Get Lettuce
             pickFreshIngredient(agent,world,'Lettuce')
             interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+        
+        elif agent.action == (-3,0):
+            pickChoppedIngredient(agent, world, 'Tomato')
+            interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
 
     #if agent is holding something
     elif agent.holding is not None: 
         if agent.action == (0,-1) and agent.holding.needs_chopped():
-            chopIngredient(agent,world)
+            empty_plate = get_available_plate(world)
+            chopIngredient(agent,world, empty_plate)
             interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
-        elif agent.action == (0,1) and agent.holding.is_chopped:
-            mergeWithPlateAndIngredient(agent,world,agent.holding.name)
-            interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
+        elif agent.action == (3,0):
+            tomato_plate = get_plate_with_ingredient(world,'Tomato')
+            chopIngredient(agent,world,tomato_plate)
     
     if agent.action == (2,0):
         deliverOrder(agent,world)
         interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
 
-
     return interaction
 
 def pickFreshIngredient(agent,world, ingredient:str):
-    test = [elm for elm in world.get_object_list() if isinstance(elm, Object)]
-    test_list = [obj for obj in test if obj.name==ingredient and not obj.is_chopped() and not obj.is_held]
-    tomato_location = test_list[0].location
+    object_list = [elm for elm in world.get_object_list() if isinstance(elm, Object)]
+    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held]
+    ingredient_location = ingredient_list[0].location
     
-    #interaction = ActionRepr(agent.name, agent.location, "Move", neighbour_floor, agent.holding)
-
-    gs: GridSquare = world.get_gridsquare_at(tomato_location)
+    gs: GridSquare = world.get_gridsquare_at(ingredient_location)
     obj = world.get_object_at(gs.location, None, find_held_objects = False)
     if obj is None:
         return
     
     if not obj.is_held:
-        neighbours = world.get_direct_neighbors(tomato_location)
-        floors = world.objects['Floor']
-        list= [flr for flr in floors if flr.location in neighbours]
-        neighbour_floor = [flr for flr in list if isinstance(flr, Floor)][0].location
+        neighbour_floor = get_direct_neighbour_floor(world,ingredient_location)
         agent.move_to(neighbour_floor)
         gs.release()
         agent.acquire(obj)
-    world.respawn_components(obj)
-    interaction = ActionRepr(agent.name, agent.location, "Get", gs.location, agent.holding)
+        world.respawn_components(obj)
 
-def chopIngredient(agent,world):
-    test = [elm for elm in world.get_object_list() if (isinstance(elm, Cutboard) or elm.name == 'Cutboard') and elm.holding is None]
-    neighbours = world.get_direct_neighbors(test[0].location)
-    floors = world.objects['Floor']
-    list= [flr for flr in floors if flr.location in neighbours]
-    neighbour_floor = [flr for flr in list if isinstance(flr, Floor)]
-    agent.move_to(neighbour_floor[0].location)
-    obj = agent.holding
-    gs: GridSquare = world.get_gridsquare_at(test[0].location)
-    gs.acquire(obj= obj)
-    agent.release()
-    #time.sleep(2)
-    obj.chop()
-    gs.release()
-    agent.acquire(obj)
 
-def mergeWithPlate(agent,world):
-    test = [elm for elm in world.get_object_list() if isinstance(elm, Object) and elm.is_plate()]
-    plate_location = test[0].location
-
-    gs: GridSquare = world.get_gridsquare_at(plate_location)
-    obj = world.get_object_at(plate_location, None, find_held_objects = False)
-
-    if mergeable(agent.holding, obj):
-        neighbour_floor= get_direct_neighbour_floor(world,plate_location)
+def chopIngredient(agent,world: World, plate):
+    cutboard = get_available_cutboards(world)
+    if cutboard is not None:
+        neighbour_floor = get_direct_neighbour_floor(world,cutboard.location)
         agent.move_to(neighbour_floor)
-        world.remove(obj)
-        o = gs.release() # counter is holding object
-        world.remove(agent.holding)
-        agent.acquire(obj)
-        world.insert(agent.holding)
-        interaction = ActionRepr(agent.name, agent.location, "Merge", gs.location, agent.holding)
-                # if playable version, merge onto counter first
-        gs.acquire(agent.holding)
+        obj = agent.holding
+        gs: GridSquare = world.get_gridsquare_at(cutboard.location)
+        gs.acquire(obj= obj)
         agent.release()
+        obj.chop()
+
+        mergeWithPlate(obj,world,plate)
+        # agent.move_to(neighbour_floor)
+        # gs.acquire(agent.holding)
+        # agent.release()
+
+def pickChoppedIngredient(agent, world: World, ingredient:str):
+    plate_with_ing = get_plate_with_ingredient(world,ingredient)
+    if plate_with_ing is not None and not plate_with_ing.is_held:
+        gs: GridSquare = world.get_gridsquare_at(plate_with_ing.location)
+        neighbour_floor = get_direct_neighbour_floor(world,plate_with_ing.location)
+        agent.move_to(neighbour_floor)
+        gs.release()
+        agent.acquire(plate_with_ing)
+
+def get_available_cutboards(world):
+    cutboards = world.objects['Cutboard']
+    empty_cutboards = [elm for elm in cutboards if elm.holding is None]
+
+    available_cutboard = None
+
+    for cutbrd in empty_cutboards:
+        if isinstance(cutbrd, Cutboard):
+            available_cutboard = cutbrd
+            break
+    
+    return available_cutboard
+
+def mergeWithPlate(obj,world:World,empty_plate):
+    gs: GridSquare = world.get_gridsquare_at(empty_plate.location)
+
+    gs_obj :GridSquare = world.get_gridsquare_at(obj.location)
+
+    if empty_plate is not None and mergeable(obj, empty_plate):
+        o = gs.release() # counter is holding object
+        world.remove(o)
+        world.remove(obj)
+        gs_obj.acquire(empty_plate)
+        world.insert(gs_obj.holding)
+        world.respawn_components(empty_plate)
 
 def mergeWithPlateAndIngredient(agent, world, ingredient: str):
-    plates = [elm for elm in world.get_object_list() if isinstance(elm, Object) and elm.name == 'Plate']
-    empty_plate_location = plates[0].location
+    plate = get_plate_with_ingredient(world, ingredient)
 
-    gs: GridSquare = world.get_gridsquare_at(empty_plate_location)
-    empty_plate = world.get_object_at(empty_plate_location, None, find_held_objects = False)
-
+    gs: GridSquare = world.get_gridsquare_at(plate.location)
+    empty_plate = world.get_object_at(plate.location, None, find_held_objects = False)
     if mergeable(agent.holding, empty_plate):
-        # neighbours = world.get_direct_neighbors(empty_plate_location)
-        # floors = world.objects['Floor']
-        # list= [flr for flr in floors if flr.location in neighbours]
-        # neighbour_floor = [flr for flr in list if isinstance(flr, Floor)][0].location
-        neighbour_floor = get_direct_neighbour_floor(world,empty_plate_location)
+        neighbour_floor = get_direct_neighbour_floor(world,plate.location)
         agent.move_to(neighbour_floor)
 
         world.remove(empty_plate)
@@ -129,8 +139,6 @@ def mergeWithPlateAndIngredient(agent, world, ingredient: str):
         world.remove(agent.holding)
         agent.acquire(empty_plate)
         world.insert(agent.holding)
-        interaction = ActionRepr(agent.name, agent.location, "Merge", gs.location, agent.holding)
-                # if playable version, merge onto counter first
 
         useable_random_counter = get_useable_counter(world)
         useable_counter_floor_loc = get_direct_neighbour_floor(world,useable_random_counter.location)
@@ -138,6 +146,32 @@ def mergeWithPlateAndIngredient(agent, world, ingredient: str):
         gs_counter: GridSquare = world.get_gridsquare_at(useable_random_counter.location)
         gs_counter.acquire(agent.holding)
         agent.release()
+
+def get_available_plate(world:World):
+    plates = world.objects['Plate']
+    empty_plate= None
+
+    for plate in plates:
+        if(isinstance(plate, Object) and any(isinstance(plt, Plate) for plt in plate.contents)):
+            empty_plate= plate
+            break
+
+    return empty_plate
+
+def get_plate_with_ingredient(world: World, ingredient:str):
+    objects = world.get_dynamic_object_list()
+
+    merged_plates = [elm for elm in objects if len(elm.contents)>1 and 
+                     any(ing.name == ingredient for ing in elm.contents)]
+
+    plate_with_ingredient = None
+
+    if len(merged_plates)>0:
+        for plate in merged_plates:
+            if not plate.is_held:
+                plate_with_ingredient = plate
+
+    return plate_with_ingredient
 
 def deliverOrder(agent,world):
         
@@ -164,21 +198,19 @@ def deliverOrder(agent,world):
 
         world.remove_order(obj.name, 2)
         # update env, world and agent orders here, respawn used components and remove delivered object
-        world.respawn_components(obj)
+        #world.respawn_components(obj)
         world.remove(obj)
 
 def get_direct_neighbour_floor(world,obj_location):
-        neighbours = world.get_direct_neighbors(obj_location)
-        floors = world.objects['Floor']
-        list= [flr for flr in floors if flr.location in neighbours]
-        neighbour_floor = None
-
-        for flr in list :
-            if isinstance(flr, Floor):
-                neighbour_floor = flr.location
-                break
-
-        return neighbour_floor
+    neighbours = world.get_direct_neighbors(obj_location)
+    floors = world.objects['Floor']
+    list= [flr for flr in floors if flr.location in neighbours]
+    neighbour_floor = None
+    for flr in list :
+        if isinstance(flr, Floor):
+            neighbour_floor = flr.location
+            break
+    return neighbour_floor
 
 def get_useable_counter(world):
     counters = world.objects['Counter']
