@@ -29,6 +29,7 @@ class Rep:
     ONION = "o"
     PLATE = "p"
     ORDER = "O"
+    GRILL = "g"
 
 
 class GridSquare:
@@ -172,6 +173,22 @@ class Cutboard(GridSquare):
     def __init__(self, location):
         GridSquare.__init__(self, "Cutboard", location)
         self.rep = Rep.CUTBOARD
+        self.collidable = True
+
+    def __eq__(self, other):
+        return GridSquare.__eq__(self, other)
+
+    def __hash__(self):
+        return GridSquare.__hash__(self)
+
+    def get_repr(self):
+        return GridSquareRepr(name=self.name, location=self.location, holding=self.holding)
+
+
+class Grill(GridSquare):
+    def __init__(self, location):
+        GridSquare.__init__(self, "Grill", location)
+        self.rep = Rep.GRILL
         self.collidable = True
 
     def __eq__(self, other):
@@ -497,4 +514,5 @@ RepToClass = {
     Rep.ONION: globals()["Onion"],
     Rep.PLATE: globals()["Plate"],
     Rep.ORDER: globals()["Order"],
+    Rep.GRILL : globals()["Grill"]
 }

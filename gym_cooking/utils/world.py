@@ -311,7 +311,7 @@ class World:
             _from = self.objects
             
         for key, val in _from.items():
-            if key not in ("Agent-Counter", "Counter", "Floor", "Delivery", "Cutboard", "Order") and "Supply" not in key:
+            if key not in ("Agent-Counter", "Counter", "Floor", "Delivery", "Cutboard", "Order","Grill") and "Supply" not in key:
                 all_obs.extend(tuple(_from[key]))
         return all_obs
     
