@@ -1,0 +1,23 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Gym Cooking Project",
+            "type": "python",
+            "request": "launch",
+            "cwd": "${workspaceFolder}/gym_cooking",
+            "program": "${workspaceFolder}/gym_cooking/main.py",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                "--config","benchmark/4/bd-bd-bd-bd.yaml"
+                
+                
+            ],
+            // command: python main.py --config=train_open-divider_salad_2_rl_rl.yaml
+        }
+    ]
+}
