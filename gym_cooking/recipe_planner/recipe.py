@@ -83,7 +83,7 @@ class Recipe:
 class SimpleTomato(Recipe):
     def __init__(self):
         from utils.core import  Tomato
-        Recipe.__init__(self, 'Tomafrom recipe_planner import Recipeto', 'T')
+        Recipe.__init__(self, 'Tomato', 'T')
         self.add_ingredient(Tomato(state_index=-1))
         self.add_goal()
         self.add_merge_actions()
