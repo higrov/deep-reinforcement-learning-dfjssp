@@ -1,13 +1,11 @@
 # Recipe planning
 from utils.utils import timeit
-from recipe_planner.stripsworld import STRIPSWorld
+# from recipe_planner.stripsworld import STRIPSWorld
 import recipe_planner.utils as recipe
 from recipe_planner.recipe import *
 from time import perf_counter
 from asyncio.log import logger
 import logging
-# Delegation planning
-from delegation_planner.bayesian_delegator import BayesianDelegator
 
 # Navigation planning
 import navigation_planner.utils as nav_utils
