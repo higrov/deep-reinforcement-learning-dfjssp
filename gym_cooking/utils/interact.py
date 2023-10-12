@@ -4,10 +4,11 @@ import logging
 from utils.world import World
 from utils.core import *
 import numpy as np
+from recipe_planner.utils import Get, Chop, Merge, Deliver
 
 logger = logging.getLogger(__name__)
 
-ACTION_TYPE = ("Wait", "Move", "Get", "Chop", "Drop", "Merge", "Deliver")
+ACTION_TYPE = ("Get", "Chop", "Merge", "Deliver")
 ActionRepr = namedtuple("ActionRepr", "agent agent_location action_type object")
 
 is_dish = lambda recipes, x: any(r.full_plate_name == x.name for r in recipes)
@@ -18,41 +19,53 @@ def interact(agent, world: World, t=-1, play=False):
 
     The action that needs to be executed is stored in `agent.action`.
     """
-    # agent does nothing
-    if agent.action == (0, 0):
-        return ActionRepr(agent.name, agent.location, "Wait", agent.holding)
-    
     interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
 
-    #if action is holding nothing
-    if agent.holding is None: 
-        # Action is Get Tomato
-        if agent.action == (-1,0):
-            pickFreshIngredient(agent,world,'Tomato')
-            interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+    action = Get('Tomato')
 
-        elif agent.action == (1,0): 
-            #Action is Get Lettuce
-            pickFreshIngredient(agent,world,'Lettuce')
-            interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+    interaction = concept_interact(agent,world,action)
+
+    action = Chop('Tomato')
+
+    interaction = concept_interact(agent,world,action)
+
+    # action= Merge('Tomato', 'Plate')
+
+    # interaction = concept_interact(agent,world,action)
+
+    # action= Deliver('Plate-Tomato')
+
+    # interaction = concept_interact(agent,world,action)
+
+
+    # # if action is holding nothing
+    # if agent.holding is None: 
+    #     # Action is Get Tomato
+    #     if agent.action == (-1,0):
+    #         pickFreshIngredient(agent,world,'Tomato')
+    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+    #     #Action is Get Lettuce
+    #     elif agent.action == (1,0): 
+    #         pickFreshIngredient(agent,world,'Lettuce')
+    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
         
-        elif agent.action == (-3,0):
-            pickChoppedIngredient(agent, world, 'Tomato')
-            interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
+    #     elif agent.action == (-3,0):
+    #         pickChoppedIngredient(agent, world, 'Tomato')
+    #         interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
 
-    #if agent is holding something
-    elif agent.holding is not None: 
-        if agent.action == (0,-1) and agent.holding.needs_chopped():
-            empty_plate = get_available_plate(world)
-            chopIngredient(agent,world, empty_plate)
-            interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
-        elif agent.action == (3,0):
-            tomato_plate = get_plate_with_ingredient(world,'Tomato')
-            chopIngredient(agent,world,tomato_plate)
+    # #if agent is holding something
+    # elif agent.holding is not None: 
+    #     if agent.action == (0,-1) and agent.holding.needs_chopped():
+    #         empty_plate = get_available_plate(world)
+    #         chopIngredient(agent,world, empty_plate)
+    #         interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
+    #     elif agent.action == (3,0):
+    #         tomato_plate = get_plate_with_ingredient(world,'Tomato')
+    #         chopIngredient(agent,world,tomato_plate)
     
-    if agent.action == (2,0):
-        deliverOrder(agent,world)
-        interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
+    # if agent.action == (2,0):
+    #     deliverOrder(agent,world)
+    #     interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
 
     return interaction
 
@@ -74,7 +87,7 @@ def pickFreshIngredient(agent,world, ingredient:str):
         world.respawn_components(obj)
 
 
-def chopIngredient(agent,world: World, plate):
+def chopIngredient(agent,world: World):
     cutboard = get_available_cutboards(world)
     if cutboard is not None:
         neighbour_floor = get_direct_neighbour_floor(world,cutboard.location)
@@ -85,7 +98,9 @@ def chopIngredient(agent,world: World, plate):
         agent.release()
         obj.chop()
 
-        mergeWithPlate(obj,world,plate)
+        breakpt = True
+
+        #mergeWithPlate(obj,world,plate)
         # agent.move_to(neighbour_floor)
         # gs.acquire(agent.holding)
         # agent.release()
@@ -147,6 +162,13 @@ def mergeWithPlateAndIngredient(agent, world, ingredient: str):
         gs_counter.acquire(agent.holding)
         agent.release()
 
+def merge(ingredient,plate, agent,world):
+    ing_obj = next((x for x in world.objects[ingredient] if x.is_chopped()), None)
+
+    plate_obj = next(plt for plt in world.objects[plate] if plt.name == plate)
+
+    mergeWithPlate(ing_obj,world,plate_obj)
+
 def get_available_plate(world:World):
     plates = world.objects['Plate']
     empty_plate= None
@@ -173,33 +195,19 @@ def get_plate_with_ingredient(world: World, ingredient:str):
 
     return plate_with_ingredient
 
-def deliverOrder(agent,world):
-        
-    deliverable_orders = [obj for obj in world.get_dynamic_object_list() if obj.is_deliverable() and is_dish(world.get_recipes(), obj)]
-    
+def deliverOrder(agent,world: World,obj):
     delivery_location = world.objects.get('Delivery')[0].location
 
-    if(len(deliverable_orders) > 0):
-        order_location = deliverable_orders[0].location
-        gs: GridSquare = world.get_gridsquare_at(order_location)
-        obj = world.get_object_at(order_location, None, find_held_objects = False)
+    delivery_floor= get_direct_neighbour_floor(world,delivery_location)
 
-        order_floor = get_direct_neighbour_floor(world= world, obj_location = order_location) 
-        agent.move_to(order_floor)
-        agent.acquire(obj)
-        gs.release()
-
-        delivery_floor= get_direct_neighbour_floor(world,delivery_location)
-
-        agent.move_to(delivery_floor)
-        gs_delivery: GridSquare = world.get_gridsquare_at(delivery_location)
-        agent.release()
-        gs_delivery.acquire(obj)
-
-        world.remove_order(obj.name, 2)
-        # update env, world and agent orders here, respawn used components and remove delivered object
-        #world.respawn_components(obj)
-        world.remove(obj)
+    agent.move_to(delivery_floor)
+    gs_delivery: GridSquare = world.get_gridsquare_at(delivery_location)
+    agent.release()
+    gs_delivery.acquire(obj)
+    world.remove_order(obj.name, 2)
+    # update env, world and agent orders here, respawn used components and remove delivered object
+    #world.respawn_components(obj)
+    world.remove(obj)
 
 def get_direct_neighbour_floor(world,obj_location):
     neighbours = world.get_direct_neighbors(obj_location)
@@ -223,6 +231,80 @@ def get_useable_counter(world):
 
     return random_counter
 
+
+
+def concept_interact(agent, world: World, action, t=-1):
+    """Carries out interaction for this agent taking this action in this world.
+
+    The action that needs to be executed is stored in `agent.action`.
+    """
+    # agent does nothing
+
+    if(action.name == 'Get'):
+        if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce': 
+            pickFreshIngredient(agent, world, action.args[0])
+    
+    elif(action.name == 'Chop'):
+        assert agent.holding is not None
+        chopIngredient(agent,world)
+
+    elif(action.name == 'Merge'):
+        assert agent.holding is None
+        obj1 = action.args[0]
+        obj2 = action.args[1]
+        merge(obj1,obj2,agent,world)
+
+    elif(action.name == 'Deliver'):
+        deliverable_order = next((obj for obj in world.get_dynamic_object_list() 
+                              if obj.is_deliverable() and is_dish(world.get_recipes(), obj) and obj.name == action.args[0]), None)
+        
+        order_location = deliverable_order.location
+        gs: GridSquare = world.get_gridsquare_at(order_location)
+        obj = world.get_object_at(order_location, None, find_held_objects = False)
+
+        order_floor = get_direct_neighbour_floor(world= world, obj_location = order_location) 
+        agent.move_to(order_floor)
+        agent.acquire(obj)
+        gs.release()
+
+        deliverOrder(agent,world,obj)
+
+
+    # if agent.action == (0, 0):
+    #     return ActionRepr(agent.name, agent.location, "Wait", agent.holding)
+    
+    interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
+    # #if action is holding nothing
+    # if agent.holding is None: 
+    #     # Action is Get Tomato
+    #     if agent.action == (-1,0):
+    #         pickFreshIngredient(agent,world,'Tomato')
+    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+
+    #     elif agent.action == (1,0): 
+    #         #Action is Get Lettuce
+    #         pickFreshIngredient(agent,world,'Lettuce')
+    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
+        
+    #     elif agent.action == (-3,0):
+    #         pickChoppedIngredient(agent, world, 'Tomato')
+    #         interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
+
+    # #if agent is holding something
+    # elif agent.holding is not None: 
+    #     if agent.action == (0,-1) and agent.holding.needs_chopped():
+    #         empty_plate = get_available_plate(world)
+    #         chopIngredient(agent,world, empty_plate)
+    #         interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
+    #     elif agent.action == (3,0):
+    #         tomato_plate = get_plate_with_ingredient(world,'Tomato')
+    #         chopIngredient(agent,world,tomato_plate)
+    
+    # if agent.action == (2,0):
+    #     deliverOrder(agent,world)
+    #     interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
+
+    return interaction
 
 
 def simulated_interact(agent, world, play=False):
