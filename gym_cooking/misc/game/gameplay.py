@@ -2,7 +2,9 @@
 from misc.game.game import Game
 from misc.game.utils import *
 from utils.core import *
-from utils.interact import interact
+from utils.interact import interact, concept_interact
+
+from recipe_planner.utils import Get, Chop, Merge, Deliver
 
 # helpers
 import pygame
@@ -53,19 +55,24 @@ class GamePlay(Game):
 
             # Control current agent
             x, y = self.current_agent.location
+           
             if event.key in KeyToTuple.keys():
                 action = KeyToTuple[event.key]
                 self.current_agent.action = action
-                interact(self.current_agent, self.world, play=True)
+                action = None
+                if(len(recipeActions)> 0):
+                    action= recipeActions.pop(0)
+                    concept_interact(self.current_agent, self.world, action )
 
     def on_execute(self):
         if self.on_init() == False:
             self._running = False
-
         while self._running:
             for event in pygame.event.get():
                 self.on_event(event)
             self.on_render()
         self.on_cleanup()
 
+
+recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
 
