@@ -2,18 +2,14 @@
 from asyncio.log import logger
 import os
 import shutil
-from recipe_planner.stripsworld import STRIPSWorld
+# from recipe_planner.stripsworld import STRIPSWorld
 from rl.seac import a2c
 from rl.mappo.mappo_evaluator import MAPPOEvaluator
 from recipe_planner.utils import *
 from recipe_planner import Recipe
 import stable_baselines3 as sbln3
 
-# Delegation planning
-from delegation_planner.bayesian_delegator import BayesianDelegator
-
 # Navigation planner
-from navigation_planner.planners.e2e_brtdp import E2E_BRTDP
 import navigation_planner.utils as nav_utils
 
 # Other core modules
@@ -30,6 +26,8 @@ AgentRepr = namedtuple("AgentRepr", "name location holding")
 # Colors for agents.
 COLORS = ["purple", "green", "blue", "yellow", "magenta"]
 
+# Possible actions_performed by Agents
+possible_actions = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
 
 class RealAgent:
     """Real Agent object that performs task inference and plans."""
@@ -84,12 +82,7 @@ class RealAgent:
         elif self.model_type == "ppo":
             self.planner = sbln3.PPO("MlpPolicy", env, verbose=0, device=arglist.device)
         else:
-            self.planner = E2E_BRTDP(
-                alpha=arglist.alpha,
-                tau=arglist.tau,
-                cap=arglist.cap,
-                main_cap=arglist.main_cap,
-            )
+            pass
 
         if self.model_type in ["ppo", "seac", "mappo"] and self.model_path is not None:
             if not self.model_path or not os.path.exists(
@@ -168,28 +161,22 @@ class RealAgent:
 
     def get_subtasks(self, order, world):
         """Return different subtask permutations for recipes."""
-        self.sw = STRIPSWorld(world)
-        # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions.
-        subtasks = self.sw.get_subtasks(recipe__=order.recipe, max_path_length=self.arglist.max_num_subtasks
-        )
-        all_subtasks = [subtask for path in subtasks for subtask in path]
+        # self.sw = STRIPSWorld(world)
+        # # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions.
+        # subtasks = self.sw.get_subtasks(recipe__=order.recipe, max_path_length=self.arglist.max_num_subtasks
+        # )
+        # all_subtasks = [subtask for path in subtasks for subtask in path]
 
-        # Uncomment below to view graph for recipe path i
-        # i = 0
-        # pg = recipe_utils.make_predicate_graph(self.sw.initial, recipe_paths[i])
-        # ag = recipe_utils.make_action_graph(self.sw.initial, recipe_paths[i])
-        return all_subtasks
+        # # Uncomment below to view graph for recipe path i
+        # # i = 0
+        # # pg = recipe_utils.make_predicate_graph(self.sw.initial, recipe_paths[i])
+        # # ag = recipe_utils.make_action_graph(self.sw.initial, recipe_paths[i])
+        # return all_subtasks
+        return [task for task in order]
 
     def setup_subtasks(self, obs):
         """Initializing subtasks and subtask allocator, Bayesian Delegation."""
         self.incomplete_subtasks = self.get_subtasks(order=obs.get_remaining_orders()[0], world=obs.world)
-        self.delegator = BayesianDelegator(
-                agent_name=self.name,
-                all_agent_names=obs.get_agent_names(),
-                model_type=self.model_type,
-                planner=self.planner,
-                none_action_probs=self.none_action_prob,
-            )
 
     def reset_subtasks(self):
         """Reset subtasks---relevant for Bayesian Delegation."""
@@ -378,11 +365,18 @@ class SimAgent:
         self.location = location
         self.spawn_location = location
         self.holding = None
-        self.action = (0, 0)
+        self.action = None
+
+        ## TODO Define possible tasks and durations. 
+        self.possible_tasks= possible_actions
+
+        self.last_action_performed = None
+        self.last_action_performed_at = None
 
     def reset(self):
         self.location = self.spawn_location
-        self.action = (0, 0)
+        self.action = None
+        self.possible_tasks = possible_actions
         if self.holding:
             self.holding.is_held = False
             self.holding = None
@@ -428,3 +422,10 @@ class SimAgent:
         self.location = new_location
         if self.holding is not None:
             self.holding.location = new_location
+    
+    def get_possible_tasks(self): 
+        return self.possible_tasks
+    
+    def set_last_operation_executed(self,val: str): self.last_operation_executed = val
+
+    def set_last_action_performed_at(self, val: int): self.last_action_performed_at = val
