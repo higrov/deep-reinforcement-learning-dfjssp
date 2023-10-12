@@ -10,7 +10,7 @@ import copy
 import networkx as nx
 import numpy as np
 
-from recipe_planner.stripsworld import STRIPSWorld
+# from recipe_planner.stripsworld import STRIPSWorld
 from recipe_planner.recipe import *
 import recipe_planner.utils as recipe_utils
 import navigation_planner.utils as nav_utils
@@ -48,6 +48,240 @@ class AgentHistoryRepr:
     location_repeater: bool 
     holding_repeater: bool
 
+# State Features
+
+def calculate_average_utilization_rate(schedule, list_machines):
+    machine_util = 0
+    num_machines = len(list_machines)
+
+    for machine in list_machines:
+        job_util = 0
+        for job in schedule:
+            task_util = 0 
+            completed_operations_machine =[oper for oper in job.get_completed_tasks() if oper[1] == machine]
+
+            for (operation, machine, _) in completed_operations_machine:
+                processing_time = machine.get_possible_tasks()[operation]
+                task_util += processing_time
+        
+            job_util+= task_util
+        
+        machine_util += (job_util/machine.timestamp_last_operation_executed)
+
+    average_utilization_rate = machine_util / num_machines  # Calculate average over tasks and jobs
+
+    return average_utilization_rate
+
+def calculate_estimated_earliness_tardiness_rate(schedule, list_machines):
+    Tcur = sum([machine.timestamp_last_operation_executed for machine in list_machines])/len(list_machines)
+
+    NJtard = 0
+    NJearly = 0
+    
+    for job in schedule: 
+        if len(job.completed_tasks)< len(job.tasks):
+            Tleft = 0
+            
+            left_tasks= [task for task in job.tasks if task not in [t[0] for t in job.completed_tasks]]
+
+            for left_task in left_tasks: 
+                tij = np.sum([machine.get_possible_tasks()[left_task] for machine in list_machines])/len(list_machines)
+                Tleft += tij
+                if Tcur + Tleft > job.due_date:
+                    NJtard += 1
+                    break
+            
+            if Tleft + Tcur < job.due_date:
+                NJearly+= 1
+    
+
+    Ete = (NJearly+NJtard) / len(schedule)
+
+    print("Number of estimated early Jobs: ", NJearly)
+    print("Number of estimated Tardy Jobs: ", NJtard)
+
+    return Ete
+
+def calculate_actual_earliness_tardiness_rate(schedule, list_machines):
+    NJa_tard = 0
+    NJa_early = 0
+
+    for job in schedule:
+        if len(job.completed_tasks)< len(job.tasks):
+            Tleft = 0
+            last_completed_task = job.get_completed_tasks()[-1]
+            if last_completed_task[2] > job.due_date:
+                NJa_tard += 1
+            
+            else:
+                left_tasks= [task for task in job.tasks if task not in [t[0] for t in job.completed_tasks]]
+
+                for left_task in left_tasks:
+                    tij = np.sum([machine.get_possible_tasks()[left_task] for machine in list_machines])/len(list_machines)
+                    Tleft+= tij
+                    if last_completed_task[2]+Tleft> job.due_date:
+                        NJa_tard +=1
+                        break
+                
+                if last_completed_task[2] +Tleft < job.due_date:
+                    NJa_early += 1
+    
+    ETa = (NJa_early+NJa_tard)/len(schedule)
+    print("Number of actual early Jobs: ", NJa_early)
+    print("Number of actual Tardy Jobs: ", NJa_tard)
+
+    return ETa
+
+def actual_penalty_cost(schedule, list_machines): 
+
+    p_num_list = [0]
+    p_den_list = [1]
+
+    for job in schedule:
+        if len(job.get_completed_tasks()) < len(job.tasks):
+            Tleft = 0
+            
+            left_tasks= [task for task in job.tasks if task not in [t[0] for t in job.completed_tasks]]
+            
+            for left_task in left_tasks:
+                tij = np.sum([machine.get_possible_tasks()[left_task] for machine in list_machines])/len(list_machines)
+                Tleft+= tij
+            
+            last_completed_task = job.get_completed_tasks()[-1]
+            
+            if(last_completed_task[2]> job.due_date):
+                penalty =  job.earliness_tardiness_weights[1] * (last_completed_task[2]+ Tleft - job.due_date)
+                p_num_list.append(penalty)
+                p_den_list.append(penalty + 10)
+            
+            if(last_completed_task[2] +Tleft < job.due_date):
+                penalty = job.earliness_tardiness_weights[0] * (job.due_date - last_completed_task[2] - Tleft)
+                p_num_list.append(penalty)
+                p_den_list.append(penalty + 10)
+    
+    p_total = sum(p_num_list) / sum(p_den_list)
+
+    return p_total
+
+# Scheduling Rules
+
+def action_dispatching_rule1(schedule, list_machines):
+    average_machine_completion_time= np.sum([machine.timestamp_last_operation_executed for machine in list_machines]) / len(list_machines)
+
+    urgency_list= [(job,job.due_date - average_machine_completion_time) for job in schedule]
+
+    select_func = lambda x: x[1]
+
+    selected_job = min(urgency_list, key=select_func)
+
+    next_uncompleted_task = [task for task in selected_job[0].tasks if task not in [t[0] for t in selected_job[0].completed_tasks]][0]
+
+    last_completed_task_selected_job = selected_job[0].completed_tasks[-1]
+
+    machine_set = [machine for machine in list_machines if next_uncompleted_task in machine.possible_tasks.keys() ]
+
+    machine_appro = []
+
+    for machine in machine_set: 
+        temp = max(machine.timestamp_last_operation_executed, last_completed_task_selected_job[2],selected_job[0].arrival_time)
+        temp2 = temp + machine.possible_tasks[next_uncompleted_task]
+        machine_appro.append((machine, temp2))
+    
+    selected_machine= min(machine_appro, key= select_func)
+
+    return(selected_machine,selected_job[0])
+
+def action_dispatching_rule2(uncompleted_jobs, list_machines):
+    for job in uncompleted_jobs:
+        execution_times : list = []
+        next_uncompleted_tasks = [task for task in job.tasks if task not in [t[0] for t in job.completed_tasks]]
+        job_execution_time= 0
+        for task in next_uncompleted_tasks:
+            machine_set = [machine for machine in list_machines if task in machine.possible_tasks.keys()]
+            time = np.sum([machine.possible_tasks[task] for machine in machine_set])/len(machine_set)
+            job_execution_time += time
+
+        execution_times.append((job, job_execution_time))
+        
+    select_func = lambda x: x[1]
+    selected_job = max(execution_times,key= select_func)
+
+
+    next_uncompleted_task = [task for task in selected_job[0].tasks if task not in [t[0] for t in selected_job[0].completed_tasks]][0]
+
+    last_completed_task_selected_job = selected_job[0].completed_tasks[-1]
+
+    machine_set = [machine for machine in list_machines if next_uncompleted_task in machine.possible_tasks.keys() ]
+
+    machine_appro = []
+
+    for machine in machine_set: 
+        temp = max(machine.timestamp_last_operation_executed, last_completed_task_selected_job[2],selected_job[0].arrival_time) + machine.possible_tasks[next_uncompleted_task]
+        machine_appro.append((machine, temp))
+    
+    selected_machine= min(machine_appro, key= select_func)
+
+    return (selected_job[0], selected_machine[0])
+
+def action_dispatching_rule3(schedule, list_machines):
+    weight_calc =[]
+    uncompleted_jobs = [job for job in schedule if not job.isCompleted]
+    for job in uncompleted_jobs:
+        calc = (0.2* job.earliness_tardiness_weights[0]) + (0.8*job.earliness_tardiness_weights[1])
+        weight_calc.append((job,calc))
+    
+    select_func = lambda x: x[1]
+
+    selected_job = max(weight_calc, key= select_func)
+
+    next_uncompleted_task = [task for task in selected_job[0].tasks if task not in [t[0] for t in selected_job[0].completed_tasks]][0]
+
+    suitable_machines = [machine for machine in list_machines if next_uncompleted_task in machine.possible_tasks.keys()]
+
+    machine_load = []
+    for machine in suitable_machines: 
+        tasks_performed = []
+        for job in uncompleted_jobs: 
+            tasks_performed.extend([completed_task for completed_task in job.completed_tasks if machine== completed_task[1]])
+
+        machine_load.append((machine,sum(integer for _,_ , integer in tasks_performed)))
+
+    selected_machine = min(machine_load, key= select_func)
+
+    return(selected_job[0], selected_machine[0])
+
+def action_dispatching_rule4(uncompleted_jobs, list_machines): 
+    mean_job_execution_times =[]
+    for job in uncompleted_jobs:
+        next_uncompleted_tasks = [task for task in job.tasks if task not in [t[0] for t in job.completed_tasks]]
+        job_execution_time = 0
+        for task in next_uncompleted_tasks:
+            suitable_machines = [machine for machine in list_machines if task in machine.possible_tasks.keys()]
+
+            average_execution_time = sum([machine.possible_tasks[task] for machine in suitable_machines])/len(suitable_machines)
+            job_execution_time += average_execution_time
+        
+        mean_job_execution_times.append((job,job_execution_time))
+    
+    selected_job = min(mean_job_execution_times,key= lambda x: x[1])
+
+    next_uncompleted_task = [task for task in selected_job[0].tasks if task not in [t[0] for t in selected_job[0].completed_tasks]][0]
+
+    last_completed_task_selected_job = selected_job[0].completed_tasks[-1]
+
+    machine_set = [machine for machine in list_machines if next_uncompleted_task in machine.possible_tasks.keys() ]
+
+    machine_appro = []
+
+    for machine in machine_set: 
+        temp = max(machine.timestamp_last_operation_executed, last_completed_task_selected_job[2],selected_job[0].arrival_time)
+        temp2 = temp + machine.possible_tasks[next_uncompleted_task]
+        machine_appro.append((machine, temp2))
+    
+    selected_machine= min(machine_appro, key= lambda x: x[1])
+
+    return(selected_job[0], selected_machine[0])
+
 class OvercookedEnvironment(gym.Env):
     """Environment object for Overcooked."""
     def __init__(self, arglist, env_id=0, early_termination=True, load_level=True):
@@ -72,6 +306,7 @@ class OvercookedEnvironment(gym.Env):
         self.rep = []
         # For tracking data during an episode.
         self.agent_history: dict[str, list[AgentHistoryRepr]] = {}
+
         # stats for info
         self.num_deliveries = 0
         self.num_handovers = 0
@@ -80,6 +315,7 @@ class OvercookedEnvironment(gym.Env):
         self.num_invalid_actions = 0
         self.num_location_repeaters = 0
         self.num_holding_repeaters = 0
+
         # flags for termination
         self.successful = False
         self.failed = False
@@ -111,7 +347,6 @@ class OvercookedEnvironment(gym.Env):
                 randomize=self.arglist.randomize,
                 reload_level=True,
             )
-        self.sw = None
 
         # Set up action and observation spaces
         # Only possible actions are up, down, left, right + no-op
@@ -244,10 +479,11 @@ class OvercookedEnvironment(gym.Env):
 
             # generate order queue from recipe list for level
             self.default_world.objects.setdefault("Order", [])
+            delivery_window = (0,10)
             for i in range(num_orders):  # append orders for level
                 random_recipe = self.recipes[np.random.randint(0, len(self.recipes))]
                 location = len(self.default_world.objects.get("Order")), y 
-                nextOrder = RepToClass[Rep.ORDER](random_recipe, location, self.t)
+                nextOrder = RepToClass[Rep.ORDER](random_recipe, location, self.t, delivery_window)
                 self.default_world.objects.get("Order").append(nextOrder)
 
             self.distances = {}
@@ -318,7 +554,7 @@ class OvercookedEnvironment(gym.Env):
         for a in self.sim_agents:
             a.reset()
         for o in self.orders:
-            o.reset(self.t)
+            o.reset(self.t, delivery_window=(0,10))
         self.agent_actions = {}
         # For visualizing episode.
         self.rep = []
@@ -432,7 +668,6 @@ class OvercookedEnvironment(gym.Env):
         new_obs.obs_tm1 = None
         new_obs.game = None
         new_obs.world = None
-        new_obs.sw = None
 
         done = self.done() # CENTRALIZED DONE
         reward = self.reward() # CENTRALIZED REWARD
@@ -677,12 +912,13 @@ class OvercookedEnvironment(gym.Env):
 
     def run_recipes(self):
         """Returns different permutations of completing recipes."""
-        self.sw = STRIPSWorld(world=self.world)
+        # self.sw = STRIPSWorld(world=self.world)
         # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions
-        subtasks = self.sw.get_subtasks(recipe__=self.get_remaining_orders()[0].recipe, max_path_length=self.arglist.max_num_subtasks)
-        all_subtasks = [subtask for path in subtasks for subtask in path]
+        # subtasks = self.sw.get_subtasks(recipe__=self.get_remaining_orders()[0].recipe, max_path_length=self.arglist.max_num_subtasks)
+        # all_subtasks = [subtask for path in subtasks for subtask in path]
         #print("Subtasks:", all_subtasks, "\n")
-        return all_subtasks
+        # return all_subtasks
+        pass
 
     def get_AB_locs_given_objs(
         self, subtask, subtask_agent_names, start_obj, goal_obj, subtask_action_obj
@@ -799,72 +1035,7 @@ class OvercookedEnvironment(gym.Env):
                 agent_locs=tuple(agent_locs),
                 A_locs=tuple(A_locs),
                 B_locs=tuple(B_locs)) + holding_penalty
-
-    def is_collision(self, agent1_loc, agent2_loc, agent1_action, agent2_action):
-        """Returns whether agents are colliding.
-
-        Collisions happens if agent collide amongst themselves or with world objects."""
-        # Tracks whether agents can execute their action.
-        execute = [True, True]
-
-        # Collision between agents and world objects.
-        agent1_next_loc = tuple(np.asarray(agent1_loc) + np.asarray(agent1_action))
-        if self.world.get_gridsquare_at(location=agent1_next_loc).collidable:
-            # Revert back because agent collided.
-            agent1_next_loc = agent1_loc
-
-        agent2_next_loc = tuple(np.asarray(agent2_loc) + np.asarray(agent2_action))
-        if self.world.get_gridsquare_at(location=agent2_next_loc).collidable:
-            # Revert back because agent collided.
-            agent2_next_loc = agent2_loc
-
-        # Inter-agent collision.
-        if agent1_next_loc == agent2_next_loc:
-            if agent1_next_loc == agent1_loc and agent1_action != (0, 0):
-                execute[1] = False
-            elif agent2_next_loc == agent2_loc and agent2_action != (0, 0):
-                execute[0] = False
-            else:
-                execute[0] = False
-                execute[1] = False
-
-        # Prevent agents from swapping places.
-        elif (agent1_loc == agent2_next_loc) and (agent2_loc == agent1_next_loc):
-            execute[0] = False
-            execute[1] = False
-        return execute
-
-    def check_collisions(self):
-        """Checks for collisions and corrects agents' executable actions.
-
-        Collisions can either happen amongst agents or between agents and world objects."""
-        execute = [True for _ in self.sim_agents]
-
-        # Check each pairwise collision between agents.
-        for i, j in combinations(range(len(self.sim_agents)), 2):
-            agent_i, agent_j = self.sim_agents[i], self.sim_agents[j]
-            exec_ = self.is_collision(
-                agent1_loc=agent_i.location,
-                agent2_loc=agent_j.location,
-                agent1_action=agent_i.action,
-                agent2_action=agent_j.action,
-            )
-
-            # Update exec array and set path to do nothing.
-            if not exec_[0]:
-                execute[i] = False
-            if not exec_[1]:
-                execute[j] = False
-
-        # print(f'\nexecute array is: {execute}')
-
-        # Update agents' actions if collision was detected.
-        for i, agent in enumerate(self.sim_agents):
-            # print("{} has action {}".format(color(agent.name, agent.color), agent.action))
-            if not execute[i]:
-                agent.action = (0, 0)
-                self.agent_history[agent.name][-1].collided=True
-                
+           
     def execute_navigation(self):
         for agent in self.sim_agents:
             interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
