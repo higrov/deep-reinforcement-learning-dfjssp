@@ -8,8 +8,8 @@ class Recipe:
         self.name = name
         self.rep = rep
         self.contents = []
-        self.actions = set()
-        self.actions.add(recipe.Get('Plate'))
+        self.actions = []
+        self.actions.append(recipe.Get('Plate'))
 
     def __str__(self):
         return self.name
@@ -25,11 +25,11 @@ class Recipe:
         self.contents.append(item)
 
         # always starts with FRESH
-        self.actions.add(recipe.Get(item.name))
+        self.actions.append(recipe.Get(item.name))
 
         if item.state_seq == FoodSequence.FRESH_CHOPPED:
-            self.actions.add(recipe.Chop(item.name))
-            self.actions.add(recipe.Merge(item.name, 'Plate',\
+            self.actions.append(recipe.Chop(item.name))
+            self.actions.append(recipe.Merge(item.name, 'Plate',\
                 [item.state_seq[-1](item.name), recipe.Fresh('Plate')], None))
 
     def add_goal(self):
@@ -40,7 +40,7 @@ class Recipe:
         self.full_plate_name = '-'.join(sorted(self.contents_names + ['Plate'])) # string
         self.delivery_name = '-'.join(sorted(self.full_contents_names)) # name of graphic file
         self.goal = recipe.Delivered(self.full_plate_name)
-        self.actions.add(recipe.Deliver(self.full_plate_name))
+        self.actions.append(recipe.Deliver(self.full_plate_name))
 
     def add_merge_actions(self):
         # should be general enough for any kind of salad / raw plated veggies
@@ -53,7 +53,7 @@ class Recipe:
             # for any combo of i ingredients to be merged
             for combo in combinations(self.contents_names, i):
                 # can merge all with plate
-                self.actions.add(recipe.Merge('-'.join(sorted(combo)), 'Plate',\
+                self.actions.append(recipe.Merge('-'.join(sorted(combo)), 'Plate',\
                     [recipe.Merged('-'.join(sorted(combo))), recipe.Fresh('Plate')], None))
 
                 # for any one item to be added to the i-1 rest
@@ -66,15 +66,15 @@ class Recipe:
 
                     # can merge item with remaining
                     if len(rem) == 1:
-                        self.actions.add(recipe.Merge(item, rem_str,\
+                        self.actions.append(recipe.Merge(item, rem_str,\
                             [recipe.Chopped(item), recipe.Chopped(rem_str)], None))
-                        self.actions.add(recipe.Merge(rem_str, plate_str))
-                        self.actions.add(recipe.Merge(item, rem_plate_str))
+                        self.actions.append(recipe.Merge(rem_str, plate_str))
+                        self.actions.append(recipe.Merge(item, rem_plate_str))
                     else:
-                        self.actions.add(recipe.Merge(item, rem_str))
-                        self.actions.add(recipe.Merge(plate_str, rem_str,\
+                        self.actions.append(recipe.Merge(item, rem_str))
+                        self.actions.append(recipe.Merge(plate_str, rem_str,\
                             [recipe.Merged(plate_str), recipe.Merged(rem_str)], None))
-                        self.actions.add(recipe.Merge(item, rem_plate_str))
+                        self.actions.append(recipe.Merge(item, rem_plate_str))
 
 
     def takes_plate(self):
@@ -84,33 +84,54 @@ class SimpleTomato(Recipe):
     def __init__(self):
         from utils.core import  Tomato
         Recipe.__init__(self, 'Tomato', 'T')
-        self.add_ingredient(Tomato(state_index=-1))
+        self.contents.append(Tomato(state_index=-1))
+        self.actions.append(recipe.Get('Tomato'))
+        self.actions.append(recipe.Chop('Tomato'))
+        self.actions.append(recipe.Merge('Tomato','Plate'))
         self.add_goal()
-        self.add_merge_actions()
+        
 
 class SimpleLettuce(Recipe):
     def __init__(self):
         Recipe.__init__(self, 'Lettuce', 'L')
         from utils.core import Lettuce
-        self.add_ingredient(Lettuce(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
         self.add_goal()
-        self.add_merge_actions()
 
 class Salad(Recipe):
     def __init__(self):
         Recipe.__init__(self, 'Salad', 'S')
         from utils.core import  Tomato,Lettuce
-        self.add_ingredient(Tomato(state_index=-1))
-        self.add_ingredient(Lettuce(state_index=-1))
+        self.contents.append(Tomato(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
+        self.actions.append(recipe.Get('Tomato'))
+        self.actions.append(recipe.Chop('Tomato'))
+        self.actions.append(recipe.Merge('Tomato','Lettuce-Plate'))
         self.add_goal()
-        self.add_merge_actions()
 
 class OnionSalad(Recipe):
     def __init__(self):
         Recipe.__init__(self, 'OnionSalad', 'O')
         from utils.core import  Tomato,Lettuce,Onion
-        self.add_ingredient(Tomato(state_index=-1))
-        self.add_ingredient(Lettuce(state_index=-1))
-        self.add_ingredient(Onion(state_index=-1))
+        self.contents.append(Tomato(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
+        self.contents.append(Onion(state_index=-1))
+
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
+        self.actions.append(recipe.Get('Tomato'))
+        self.actions.append(recipe.Chop('Tomato'))
+        self.actions.append(recipe.Merge('Tomato','Lettuce-Plate'))
+
+        self.actions.append(recipe.Get('Onion'))
+        self.actions.append(recipe.Chop('Onion'))
+        self.actions.append(recipe.Merge('Onion','Lettuce-Plate-Tomato'))
+
         self.add_goal()
-        self.add_merge_actions()

@@ -83,23 +83,48 @@ class Floor(GridSquare):
 
 
 class Order(GridSquare):
-    def __init__(self, recipe: Recipe, location, t):
+    def __init__(self, recipe: Recipe, location, t, delivery_window):
         GridSquare.__init__(self, recipe.name, location)
         self.recipe = recipe
         self.rep = recipe.rep  # instead of Rep.ORDER
         self.full_name = recipe.delivery_name
+        self.tasks = recipe.actions
+        self.completed_tasks = []
         self.queued_at = t
         self.delivered_at = None
+        self.delivery_window = delivery_window
+        self.earliness_tardiness_weights = (10,30)
+
         self.delivered = False
         self.duration = -1
         self.dynamic = False
         self.collidable = False
+        self.completed = False
 
-    def reset(self, t):
+    def reset(self, t, delivery_window):
         self.queued_at = t
         self.delievered_at = None
         self.duration = -1
         self.delivered = False
+        self.delivery_window = delivery_window
+        self.completed_tasks = []
+
+    def get_tasks(self): return self.tasks
+    
+    def set_completed(self, val: bool): self.completed = val
+
+    def get_completed(self): return self.completed 
+
+    def get_delivery_window(self): return self.delivery_window
+
+    def add_completed_tasks(self, val : str): 
+        self.completed_tasks.append(val)
+        if(self.completed_tasks == self.tasks):
+            self.set_IsCompleted(True)
+
+    def get_completed_tasks(self) : return self.completed_tasks
+
+    def get_queued_time(self): return self.queued_at
 
     def __eq__(self, other):
         return (
@@ -108,10 +133,11 @@ class Order(GridSquare):
             and self.rep == other.rep
             and self.delivered == other.delivered
             and self.queued_at == other.queued_at
-            and self.delivered_at == other.delivered_at)
+            and self.delivered_at == other.delivered_at
+            and self.delivery_window == other.delivery_window)
 
     def __hash__(self):
-        return hash((self.full_name, self.delivered, self.queued_at, self.duration))
+        return hash((self.full_name, self.delivered, self.queued_at, self.duration, self.delivery_window))
 
     def get_repr(self):
         return OrderRepr(self.name, self.full_name, self.delivered, self.queued_at, self.delivered_at)
