@@ -21,51 +21,48 @@ def interact(agent, world: World, t=-1, play=False):
     """
     interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
 
-    action = Get('Tomato')
+    interaction = concept_interact(agent,world,agent.action)
 
-    interaction = concept_interact(agent,world,action)
-
-    action = Chop('Tomato')
-
-    interaction = concept_interact(agent,world,action)
-
-    # action= Merge('Tomato', 'Plate')
-
-    # interaction = concept_interact(agent,world,action)
-
-    # action= Deliver('Plate-Tomato')
-
-    # interaction = concept_interact(agent,world,action)
+    return interaction
 
 
-    # # if action is holding nothing
-    # if agent.holding is None: 
-    #     # Action is Get Tomato
-    #     if agent.action == (-1,0):
-    #         pickFreshIngredient(agent,world,'Tomato')
-    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
-    #     #Action is Get Lettuce
-    #     elif agent.action == (1,0): 
-    #         pickFreshIngredient(agent,world,'Lettuce')
-    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
-        
-    #     elif agent.action == (-3,0):
-    #         pickChoppedIngredient(agent, world, 'Tomato')
-    #         interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
+def concept_interact(agent, world: World, action, t=-1):
+    """Carries out interaction for this agent taking this action in this world.
 
-    # #if agent is holding something
-    # elif agent.holding is not None: 
-    #     if agent.action == (0,-1) and agent.holding.needs_chopped():
-    #         empty_plate = get_available_plate(world)
-    #         chopIngredient(agent,world, empty_plate)
-    #         interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
-    #     elif agent.action == (3,0):
-    #         tomato_plate = get_plate_with_ingredient(world,'Tomato')
-    #         chopIngredient(agent,world,tomato_plate)
+    The action that needs to be executed is stored in `agent.action`.
+    """
+    # agent does nothing
+
+    if(action.name == 'Get'):
+        if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce': 
+            pickFreshIngredient(agent, world, action.args[0])
     
-    # if agent.action == (2,0):
-    #     deliverOrder(agent,world)
-    #     interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
+    elif(action.name == 'Chop'):
+        assert agent.holding is not None
+        chopIngredient(agent,world)
+
+    elif(action.name == 'Merge'):
+        assert agent.holding is None
+        obj1 = action.args[0]
+        obj2 = action.args[1]
+        merge(obj1,obj2,agent,world)
+
+    elif(action.name == 'Deliver'):
+        deliverable_order = next((obj for obj in world.get_dynamic_object_list() 
+                              if obj.is_deliverable() and is_dish(world.get_recipes(), obj) and obj.name == action.args[0]), None)
+        
+        order_location = deliverable_order.location
+        gs: GridSquare = world.get_gridsquare_at(order_location)
+        obj = world.get_object_at(order_location, None, find_held_objects = False)
+
+        order_floor = get_direct_neighbour_floor(world= world, obj_location = order_location) 
+        agent.move_to(order_floor)
+        agent.acquire(obj)
+        gs.release()
+
+        deliverOrder(agent,world,obj)
+
+    interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
 
     return interaction
 
@@ -230,81 +227,6 @@ def get_useable_counter(world):
     random_counter = random.choice(useable_counters)
 
     return random_counter
-
-
-
-def concept_interact(agent, world: World, action, t=-1):
-    """Carries out interaction for this agent taking this action in this world.
-
-    The action that needs to be executed is stored in `agent.action`.
-    """
-    # agent does nothing
-
-    if(action.name == 'Get'):
-        if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce': 
-            pickFreshIngredient(agent, world, action.args[0])
-    
-    elif(action.name == 'Chop'):
-        assert agent.holding is not None
-        chopIngredient(agent,world)
-
-    elif(action.name == 'Merge'):
-        assert agent.holding is None
-        obj1 = action.args[0]
-        obj2 = action.args[1]
-        merge(obj1,obj2,agent,world)
-
-    elif(action.name == 'Deliver'):
-        deliverable_order = next((obj for obj in world.get_dynamic_object_list() 
-                              if obj.is_deliverable() and is_dish(world.get_recipes(), obj) and obj.name == action.args[0]), None)
-        
-        order_location = deliverable_order.location
-        gs: GridSquare = world.get_gridsquare_at(order_location)
-        obj = world.get_object_at(order_location, None, find_held_objects = False)
-
-        order_floor = get_direct_neighbour_floor(world= world, obj_location = order_location) 
-        agent.move_to(order_floor)
-        agent.acquire(obj)
-        gs.release()
-
-        deliverOrder(agent,world,obj)
-
-
-    # if agent.action == (0, 0):
-    #     return ActionRepr(agent.name, agent.location, "Wait", agent.holding)
-    
-    interaction = ActionRepr(agent.name, agent.location, "Wait", agent.holding)
-    # #if action is holding nothing
-    # if agent.holding is None: 
-    #     # Action is Get Tomato
-    #     if agent.action == (-1,0):
-    #         pickFreshIngredient(agent,world,'Tomato')
-    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
-
-    #     elif agent.action == (1,0): 
-    #         #Action is Get Lettuce
-    #         pickFreshIngredient(agent,world,'Lettuce')
-    #         interaction = ActionRepr(agent.name, agent.location, "Get", agent.holding)
-        
-    #     elif agent.action == (-3,0):
-    #         pickChoppedIngredient(agent, world, 'Tomato')
-    #         interaction = ActionRepr(agent.name, agent.location, "Merge", agent.holding)
-
-    # #if agent is holding something
-    # elif agent.holding is not None: 
-    #     if agent.action == (0,-1) and agent.holding.needs_chopped():
-    #         empty_plate = get_available_plate(world)
-    #         chopIngredient(agent,world, empty_plate)
-    #         interaction = ActionRepr(agent.name, agent.location, "Chop", agent.holding)
-    #     elif agent.action == (3,0):
-    #         tomato_plate = get_plate_with_ingredient(world,'Tomato')
-    #         chopIngredient(agent,world,tomato_plate)
-    
-    # if agent.action == (2,0):
-    #     deliverOrder(agent,world)
-    #     interaction = ActionRepr(agent.name, agent.location, "Deliver", agent.holding)
-
-    return interaction
 
 
 def simulated_interact(agent, world, play=False):
