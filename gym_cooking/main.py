@@ -11,7 +11,12 @@ from recipe_planner.recipe import *
 from utils.agent import RealAgent, COLORS
 from utils.core import *
 from misc.game.gameplay import GamePlay
+from utils.world import World
 from rl import train_ppo, train_seac
+
+import simpy
+from ddqnscheduler.scheduler import Agent as SchedulingAgent
+from schedulingrules import *
 
 import utils.utils as utils
 import parsers as parsers
@@ -37,7 +42,7 @@ def change_arglist(val):
     global_arglist = val
 
 
-def initialize_agents(arglist, orders: tuple[Order], env, model_types, model_paths,) -> list[RealAgent]:
+def initialize_agents(arglist, orders: tuple[Order], jobshop_env, model_types, model_paths,) -> list[RealAgent]:
     real_agents = []
 
     with open(f"utils/levels/{arglist.level}.txt", "r") as f:
@@ -62,24 +67,29 @@ def initialize_agents(arglist, orders: tuple[Order], env, model_types, model_pat
             elif phase == 3:
                 if len(real_agents) < arglist.num_agents:
                     loc = line.split(" ")
-                    model_path = model_paths[len(real_agents)] if model_paths else None
-                    model_type = model_types[len(real_agents)] if model_types else None
-                    obs_space = env.observation_space[len(real_agents)] if model_type in RL else None
-                    action_space = env.action_space[len(real_agents)] if model_type in RL else None
                     real_agent = RealAgent(
                         arglist=arglist,
                         name="agent-" + str(len(real_agents) + 1),
                         id_color=COLORS[len(real_agents)],
-                        recipes=recipes,
-                        obs_space=obs_space,
-                        action_space=action_space,
-                        model_type=model_type,
-                        model_path=model_path,
-                        env=env,
-                    )
+                        jobshop_env=jobshop_env,
+                        capacity= 1
+                        )
                     real_agents.append(real_agent)
 
     return real_agents
+
+
+def initialize_jobShop(num_machines, capacity_per_machine, jobshop_env):
+    machines= []
+    for i in range(num_machines):
+        newMachine = RealAgent(arglist=arglist,
+                               jobshop_env=jobshop_env,
+                               name= 'agent-'+str(len(i)+1),
+                               capacity= capacity_per_machine,
+                               id_color=COLORS[len(machines)]
+                             )
+        machines.append(newMachine)
+    return machines
 
 
 def eval_loop(arglist):
@@ -201,85 +211,118 @@ def train_loop(arglist):
     arglist.run_id = arglist.run_id if arglist.continue_run else f"{arglist.run_id}{'-' if arglist.run_id else ''}{int(time.time())}"
     model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4]
 
-    if any(x == "ppo" for x in model_types):
-        train_ppo.learn_ppo(
-            env_id="overcookedEnv-v0",
-            arglist=arglist,
-            run_id=arglist.run_id,
-            num_total_timesteps=arglist.num_total_timesteps,
-            num_steps_per_update=arglist.num_steps_per_update,
-            num_processes=arglist.num_processes,
-            device=arglist.device,
-            lr=arglist.lr,
-            batch_size=arglist.batch_size,
-            gamma=arglist.gamma,
-            gae_lambda=arglist.gae_lambda,
-            clip_range=arglist.clip_range,
-            entropy_coef=arglist.entropy_coef,
-            value_loss_coef=arglist.value_loss_coef,
-            max_grad_norm=arglist.max_grad_norm,
-            restore=True,
-            notes=arglist.notes,
-            tags=parsers.parse_tags(arglist.tags),
+    overcooked_env: OvercookedEnvironment = gym.envs.make(
+            "overcookedEnv-v0", arglist=arglist
         )
-    if any(x == "seac" for x in model_types):
-        train_seac.learn_seac(
-            env_id="overcookedEnv-v0",
-            arglist=arglist,
-            run_id=arglist.run_id,
-            num_episodes=arglist.num_episodes,
-            num_steps_per_episode=arglist.num_timesteps_per_episode,
-            num_processes=arglist.num_processes,
-            device=arglist.device,
-            lr=arglist.lr,
-            adam_eps=arglist.adam_eps,
-            use_gae=arglist.use_gae,
-            gamma=arglist.gamma,
-            value_loss_coef=arglist.value_loss_coef,
-            entropy_coef=arglist.entropy_coef,
-            seac_coef=arglist.seac_coef,
-            max_grad_norm=arglist.max_grad_norm,
-            restore=True,
-            notes=arglist.notes,
-            tags=parsers.parse_tags(arglist.tags),
-        )
-    if any(x == "mappo" for x in model_types):
-        train_mappo.learn_mappo(
-            env_id="overcookedEnv-v0",
-            arglist=arglist,
-            run_id=arglist.run_id,
-            num_total_timesteps=arglist.num_total_timesteps,
-            num_processes=arglist.num_processes,
-            device=arglist.device,
-            share_policy=arglist.share_policy,
-            use_centralized_v=arglist.use_centralized_v,
-            hidden_size=arglist.hidden_size,
-            layer_N=arglist.num_mlp_hidden_layers,
-            use_popart=arglist.use_popart,
-            use_valuenorm=arglist.use_valuenorm,
-            use_feature_normalization=arglist.use_featurenorm,
-            use_naive_recurrent_policy=arglist.use_naive_recurrent_policy,
-            use_recurrent_policy=arglist.use_recurrent_policy,
-            recurrent_N=arglist.num_rnn_hidden_layers,
-            data_chunk_length=arglist.rnn_data_length,
-            lr=arglist.lr,
-            critic_lr=arglist.critic_lr,
-            adam_eps=arglist.adam_eps,
-            ppo_epoch=arglist.num_epoch,
-            clip_param=arglist.clip_range,
-            num_mini_batch=arglist.batch_size,
-            entropy_coef=arglist.entropy_coef,
-            value_loss_coef=arglist.value_loss_coef,
-            max_grad_norm=arglist.max_grad_norm,
-            use_gae=arglist.use_gae,
-            gamma=arglist.gamma,
-            gae_lambda=arglist.gae_lambda,
-            restore=True,
-            notes=arglist.notes,
-            tags=parsers.parse_tags(arglist.tags),
-        )
+    
+    overcooked_obs = overcooked_env.reset()
+    jobshop = simpy.Environment()
 
+    real_jobshop_machines = initialize_jobShop(num_machines=4, capacity_per_machine=1, jobshop_env= jobshop)
 
+    ddqn = SchedulingAgent(nb_total_operations= all_operations, nb_input_params=4, nb_actions=4)
+
+    state = [0,0,0,0]
+
+    for i in range(arglist.num_episodes):
+
+        while not overcooked_env.done():
+            action_dict = {}
+
+            scheduling_rule = ddqn.choose_action(state)
+
+            selected_job, selected_machine = scheduling_rules[scheduling_rule](orders, real_jobshop_machines) 
+
+            action_dict[selected_machine.name] = selected_job.get_next_action()
+
+            obs, reward, done, info = overcooked_env.step(action_dict=action_dict)
+
+            if(info['action_successful']):
+                machine = next([machine for machine in real_jobshop_machines if machine.name == selected_machine.name])
+                selected_action= selected_job.get_next_action()
+                with machine.queue.request() as request:
+                    yield request
+                    print(f"{jobshop.now:.2f}: Job {selected_job.name}, operation {str(selected_action)} started on {machine.name}")
+                    yield jobshop.process(machine.process_job(selected_job.name, str(selected_action), machine.get_processing_time(selected_action)))
+
+    
+    # if any(x == "ppo" for x in model_types):
+    #     train_ppo.learn_ppo(
+    #         env_id="overcookedEnv-v0",
+    #         arglist=arglist,
+    #         run_id=arglist.run_id,
+    #         num_total_timesteps=arglist.num_total_timesteps,
+    #         num_steps_per_update=arglist.num_steps_per_update,
+    #         num_processes=arglist.num_processes,
+    #         device=arglist.device,
+    #         lr=arglist.lr,
+    #         batch_size=arglist.batch_size,
+    #         gamma=arglist.gamma,
+    #         gae_lambda=arglist.gae_lambda,
+    #         clip_range=arglist.clip_range,
+    #         entropy_coef=arglist.entropy_coef,
+    #         value_loss_coef=arglist.value_loss_coef,
+    #         max_grad_norm=arglist.max_grad_norm,
+    #         restore=True,
+    #         notes=arglist.notes,
+    #         tags=parsers.parse_tags(arglist.tags),
+    #     )
+    # if any(x == "seac" for x in model_types):
+    #     train_seac.learn_seac(
+    #         env_id="overcookedEnv-v0",
+    #         arglist=arglist,
+    #         run_id=arglist.run_id,
+    #         num_episodes=arglist.num_episodes,
+    #         num_steps_per_episode=arglist.num_timesteps_per_episode,
+    #         num_processes=arglist.num_processes,
+    #         device=arglist.device,
+    #         lr=arglist.lr,
+    #         adam_eps=arglist.adam_eps,
+    #         use_gae=arglist.use_gae,
+    #         gamma=arglist.gamma,
+    #         value_loss_coef=arglist.value_loss_coef,
+    #         entropy_coef=arglist.entropy_coef,
+    #         seac_coef=arglist.seac_coef,
+    #         max_grad_norm=arglist.max_grad_norm,
+    #         restore=True,
+    #         notes=arglist.notes,
+    #         tags=parsers.parse_tags(arglist.tags),
+    #     )
+    # if any(x == "mappo" for x in model_types):
+    #     train_mappo.learn_mappo(
+    #         env_id="overcookedEnv-v0",
+    #         arglist=arglist,
+    #         run_id=arglist.run_id,
+    #         num_total_timesteps=arglist.num_total_timesteps,
+    #         num_processes=arglist.num_processes,
+    #         device=arglist.device,
+    #         share_policy=arglist.share_policy,
+    #         use_centralized_v=arglist.use_centralized_v,
+    #         hidden_size=arglist.hidden_size,
+    #         layer_N=arglist.num_mlp_hidden_layers,
+    #         use_popart=arglist.use_popart,
+    #         use_valuenorm=arglist.use_valuenorm,
+    #         use_feature_normalization=arglist.use_featurenorm,
+    #         use_naive_recurrent_policy=arglist.use_naive_recurrent_policy,
+    #         use_recurrent_policy=arglist.use_recurrent_policy,
+    #         recurrent_N=arglist.num_rnn_hidden_layers,
+    #         data_chunk_length=arglist.rnn_data_length,
+    #         lr=arglist.lr,
+    #         critic_lr=arglist.critic_lr,
+    #         adam_eps=arglist.adam_eps,
+    #         ppo_epoch=arglist.num_epoch,
+    #         clip_param=arglist.clip_range,
+    #         num_mini_batch=arglist.batch_size,
+    #         entropy_coef=arglist.entropy_coef,
+    #         value_loss_coef=arglist.value_loss_coef,
+    #         max_grad_norm=arglist.max_grad_norm,
+    #         use_gae=arglist.use_gae,
+    #         gamma=arglist.gamma,
+    #         gae_lambda=arglist.gae_lambda,
+    #         restore=True,
+    #         notes=arglist.notes,
+    #         tags=parsers.parse_tags(arglist.tags),
+    #     )
 
 if __name__ == "__main__":
     # initializes command line arguments, all missing arguments have default values
