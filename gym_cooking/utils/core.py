@@ -117,12 +117,16 @@ class Order(GridSquare):
 
     def get_delivery_window(self): return self.delivery_window
 
-    def add_completed_tasks(self, val : str): 
+    def add_completed_tasks(self, val): 
         self.completed_tasks.append(val)
         if(self.completed_tasks == self.tasks):
             self.set_IsCompleted(True)
 
     def get_completed_tasks(self) : return self.completed_tasks
+
+    def get_next_action(self):
+        uncompleted_tasks = [task for task in self.tasks if task not in [t[0] for t in self.completed_tasks]]
+        return uncompleted_tasks[0]
 
     def get_queued_time(self): return self.queued_at
 

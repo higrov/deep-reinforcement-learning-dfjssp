@@ -21,13 +21,26 @@ import copy
 from termcolor import colored as color
 from collections import namedtuple
 
+import simpy
+
 AgentRepr = namedtuple("AgentRepr", "name location holding")
 
 # Colors for agents.
 COLORS = ["purple", "green", "blue", "yellow", "magenta"]
 
 # Possible actions_performed by Agents
-possible_actions = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
+possible_operations = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
+
+class Machine:
+    def __init__(self, env, name, capacity):
+        self.env = env
+        self.name = name
+        self.capacity = capacity
+        self.queue = simpy.Resource(env, capacity=capacity)
+
+    def process_job(self, job, operation,  processing_time):
+        yield self.env.timeout(processing_time)  # Simulate processing time
+        print(f"{self.env.now:.2f}: Job {job}, operation {operation} completed on {self.name}")
 
 class RealAgent:
     """Real Agent object that performs task inference and plans."""
@@ -37,72 +50,78 @@ class RealAgent:
         arglist,
         name,
         id_color,
-        recipes: list[Recipe],
-        obs_space,
-        action_space,
-        model_type,
-        model_path,
-        env,
+        jobshop_env,
+        capacity
     ):
         self.arglist = arglist
         self.name = name
         self.color = id_color
-        self.recipes = recipes
+        # self.recipes = recipes
         self.holding: Object = None
 
+        # JobShop Machine 
+
+        self.jobshop_env = jobshop_env
+        self.capacity = capacity
+        self.queue = simpy.Resource(self.jobshop_env, capacity=self.capacity)
+        self.possible_operations = possible_operations
+
+        self.last_operation_executed = None
+        self.last_operation_executed_at = None
+
         # Bayesian Delegation.
-        self.reset_subtasks()
-        self.new_subtask = None
-        self.new_subtask_agent_names = []
-        self.incomplete_subtasks = []
-        self.signal_reset_delegator = False
-        self.is_subtask_complete = lambda w: False
-        self.beta = arglist.beta
-        self.none_action_prob = 0.5
+        # self.reset_subtasks()
+        # self.new_subtask = None
+        # self.new_subtask_agent_names = []
+        # self.incomplete_subtasks = []
+        # self.signal_reset_delegator = False
+        # self.is_subtask_complete = lambda w: False
+        # self.beta = arglist.beta
+        # self.none_action_prob = 0.5
 
-        # Agent Model
-        self.model_type, self.model_path = model_type, model_path
-        if self.model_type == "up":
-            self.priors = "uniform"
-        else:
-            self.priors = "spatial"
+        # # Agent Model
+        # self.model_type, self.model_path = model_type, model_path
+        # if self.model_type == "up":
+        #     self.priors = "uniform"
+        # else:
+        #     self.priors = "spatial"
 
-        # Navigation planner.
-        if self.model_type == "mappo":
-            self.planner: MAPPOEvaluator = MAPPOEvaluator(env=env, device=arglist.device, idx=int(self.name[-1]) - 1, config=arglist)
-        elif self.model_type == "seac":
-            self.planner = a2c.A2C(
-                self.name[-1],
-                obs_space,
-                action_space,
-                arglist.max_num_timesteps,
-                arglist.num_processes,
-                arglist.device,
-            )
-        elif self.model_type == "ppo":
-            self.planner = sbln3.PPO("MlpPolicy", env, verbose=0, device=arglist.device)
-        else:
-            pass
+        # # Navigation planner.
+        # if self.model_type == "mappo":
+        #     self.planner: MAPPOEvaluator = MAPPOEvaluator(env=overcooked_env, device=arglist.device, idx=int(self.name[-1]) - 1, config=arglist)
+        # elif self.model_type == "seac":
+        #     self.planner = a2c.A2C(
+        #         self.name[-1],
+        #         obs_space,
+        #         action_space,
+        #         arglist.max_num_timesteps,
+        #         arglist.num_processes,
+        #         arglist.device,
+        #     )
+        # elif self.model_type == "ppo":
+        #     self.planner = sbln3.PPO("MlpPolicy", overcooked_env, verbose=0, device=arglist.device)
+        # else:
+        #     pass
 
-        if self.model_type in ["ppo", "seac", "mappo"] and self.model_path is not None:
-            if not self.model_path or not os.path.exists(
-                f"./models/{self.model_path}"
-            ):
-                raise ValueError(
-                    f"Model {self.model_path} does not exist at location './models'. Please fix args or config."
-                )
-            elif self.model_type == "seac":
-                shutil.unpack_archive(
-                    f"./models/{self.model_path}", "./models", "xztar"
-                )
-                self.planner.restore(
-                    f"./models/{self.model_path.replace('.tar.xz', '')}"
-                )
-                shutil.rmtree(f"./models/{self.model_path.replace('.tar.xz', '')}")
-            elif self.model_type == "ppo":
-                self.planner.load(f"./models/{self.model_path}")
-            elif self.model_type == "mappo":
-                self.planner.restore(f"./models/{self.model_path}")
+        # if self.model_type in ["ppo", "seac", "mappo"] and self.model_path is not None:
+        #     if not self.model_path or not os.path.exists(
+        #         f"./models/{self.model_path}"
+        #     ):
+        #         raise ValueError(
+        #             f"Model {self.model_path} does not exist at location './models'. Please fix args or config."
+        #         )
+        #     elif self.model_type == "seac":
+        #         shutil.unpack_archive(
+        #             f"./models/{self.model_path}", "./models", "xztar"
+        #         )
+        #         self.planner.restore(
+        #             f"./models/{self.model_path.replace('.tar.xz', '')}"
+        #         )
+        #         shutil.rmtree(f"./models/{self.model_path.replace('.tar.xz', '')}")
+        #     elif self.model_type == "ppo":
+        #         self.planner.load(f"./models/{self.model_path}")
+        #     elif self.model_type == "mappo":
+        #         self.planner.restore(f"./models/{self.model_path}")
 
     def __str__(self):
         return color(self.name[-1], 'red' if 'purple' == self.color else self.color)
@@ -112,13 +131,19 @@ class RealAgent:
             arglist=self.arglist,
             name=self.name,
             id_color=self.color,
-            recipes=self.recipes,
-            model_path=self.model_path,
+            capacity=self.capacity,
+            jobshop_env=self.jobshop_env
+
         )
-        a.subtask = self.subtask
-        a.new_subtask = self.new_subtask
-        a.subtask_agent_names = self.subtask_agent_names
-        a.new_subtask_agent_names = self.new_subtask_agent_names
+        # a.subtask = self.subtask
+        # a.new_subtask = self.new_subtask
+        # a.subtask_agent_names = self.subtask_agent_names
+        # a.new_subtask_agent_names = self.new_subtask_agent_names
+        a.possible_operations = self.possible_operations 
+
+        a.last_operation_executed = None
+        a.last_operation_executed_at = None
+
         a.__dict__ = self.__dict__.copy()
         if self.holding is not None:
             a.holding = copy.copy(self.holding)
@@ -355,6 +380,16 @@ class RealAgent:
                 > self.cur_obj_count
             )
 
+    def process_job(self, job, operation,  processing_time):
+        yield self.env.timeout(processing_time)  # Simulate processing time
+        print(f"{self.env.now:.2f}: Job {job}, operation {operation} completed on {self.name}")
+        
+    def get_possible_operations(self): 
+        return self.possible_operations
+    
+    def set_last_operation_executed(self,val: str): self.last_operation_executed = val
+
+    def set_last_operation_performed_at(self, val: int): self.last_operation_executed_at = val
 
 class SimAgent:
     """Simulation agent used in the environment object."""
@@ -367,8 +402,7 @@ class SimAgent:
         self.holding = None
         self.action = None
 
-        ## TODO Define possible tasks and durations. 
-        self.possible_tasks= possible_actions
+        self.possible_tasks= possible_operations
 
         self.last_action_performed = None
         self.last_action_performed_at = None
@@ -376,7 +410,7 @@ class SimAgent:
     def reset(self):
         self.location = self.spawn_location
         self.action = None
-        self.possible_tasks = possible_actions
+        self.possible_tasks = possible_operations
         if self.holding:
             self.holding.is_held = False
             self.holding = None
