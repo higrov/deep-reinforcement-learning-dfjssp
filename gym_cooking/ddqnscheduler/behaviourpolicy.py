@@ -1,7 +1,7 @@
-from rl.policy import Policy
+import rl
 import numpy as np
 
-class SoftEpsilonGreedyPolicy(Policy):
+class SoftEpsilonGreedyPolicy(object):
     def __init__(self,n_total_operations, epsilon=1, n_actions=4):
         super(SoftEpsilonGreedyPolicy, self).__init__()
         self.epsilon = epsilon

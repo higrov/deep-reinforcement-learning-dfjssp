@@ -9,6 +9,7 @@ from keras.models import Sequential
 from keras.layers import Input, Dense, Flatten
 from keras.regularizers import l2
 import tensorflow as tf
+from .parameter import LEARNING_RATE
 
 
 tf.compat.v1.disable_eager_execution()
@@ -16,14 +17,15 @@ tf.compat.v1.disable_eager_execution()
 
 def create_model(shape, nb_actions):
     model = Sequential()
-    model.add(Input(input_shape=shape, name= 'l1'))
+    model.add(Input(shape=(shape,)))
+    model.add(Dense(30, activation='relu', name= 'l1'))
     model.add(Dense(30, activation='relu', name= 'l2'))
     model.add(Dense(30, activation='relu', name= 'l3'))
     model.add(Dense(30, activation='relu', name= 'l4'))
     model.add(Dense(30, activation='relu', name= 'l5'))
-    model.add(Dense(30, activation='relu', name= 'l6'))
-    model.add(Dense(nb_actions, activation='linear',  name= 'l7'))
-
+    model.add(Dense(nb_actions, activation='linear',  name= 'l6'))
+    model.compile(optimizer= tf.keras.optimizers.legacy.Adam(lr= LEARNING_RATE), loss="mean_squared_error")
+    model.summary()
     return model
 
 
@@ -35,8 +37,8 @@ class DoubleDeepQNetwork:
         self.nb_actions =nb_actions
 
         if train:
-            self.model = create_model((1,nb_input_params), nb_actions)
-            self.target_model = create_model((1,nb_input_params), nb_actions)
+            self.model = create_model(shape= nb_input_params, nb_actions=nb_actions)
+            self.target_model = create_model(shape= nb_input_params, nb_actions=nb_actions)
         else:
             self.model = tf.keras.models.load_model(model_file)
             self.target_model = tf.keras.models.load_model(model_file)
@@ -46,21 +48,23 @@ class DoubleDeepQNetwork:
 
     def train(self, x, y, sample_weight=None, epochs=1, verbose=0):  # x is the input to the network and y is the output
         loss = []
-        history = self.model.fit(x, y, batch_size=len(x), sample_weight=sample_weight, epochs=epochs, verbose=verbose)
-        loss.append(history.history['loss'][0])  # loss 기록
+        history = self.model.fit(x, y, epochs=epochs, verbose=verbose)
+        loss.append(history.history['loss'][0])
         return min(loss)
 
     def test(self, weight_file):
         self.model.load_weights(weight_file)
 
     def predict_one(self, state, target=False):
-        return self.predict(np.array(state).reshape(1, self.nb_input_params), target=target).flatten()
+        return self.predict(np.array(state).reshape(self.nb_input_params,), target=target)
 
     def predict(self, state, target=False):
+        state = np.array(state).reshape(1,self.nb_input_params)
+
         if target:  # get prediction from target network
             return self.target_model.predict(state)
+        
         else:  # get prediction from local network
-            # print (state)
             return self.model.predict(state)
 
     def update_target_model(self):

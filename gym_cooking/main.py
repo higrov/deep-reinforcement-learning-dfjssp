@@ -1,4 +1,3 @@
-
 from asyncio.log import logger
 import logging
 
@@ -18,6 +17,8 @@ import simpy
 from ddqnscheduler.scheduler import Agent as SchedulingAgent
 from schedulingrules import *
 
+from recipe_planner.utils import Get, Chop, Merge, Deliver
+
 import utils.utils as utils
 import parsers as parsers
 import sweep as sweep
@@ -32,6 +33,8 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
+
+UPDATE = 400 
 
 def define_arglist():
     global global_arglist
@@ -84,7 +87,7 @@ def initialize_jobShop(num_machines, capacity_per_machine, jobshop_env):
     for i in range(num_machines):
         newMachine = RealAgent(arglist=arglist,
                                jobshop_env=jobshop_env,
-                               name= 'agent-'+str(len(i)+1),
+                               name= 'agent-'+str(len(machines)+1),
                                capacity= capacity_per_machine,
                                id_color=COLORS[len(machines)]
                              )
@@ -205,7 +208,7 @@ def eval_loop(arglist):
     eval_run.log({"eval_stats": eval_table})
     eval_run.finish()
 
-def train_loop(arglist):
+def train_loop(arglist, jobshop):
     """The train loop for training RL Agents."""
     logger.info("Initializing environment and agents for training RL Agents.")
     arglist.run_id = arglist.run_id if arglist.continue_run else f"{arglist.run_id}{'-' if arglist.run_id else ''}{int(time.time())}"
@@ -216,36 +219,34 @@ def train_loop(arglist):
         )
     
     overcooked_obs = overcooked_env.reset()
-    jobshop = simpy.Environment()
-
     real_jobshop_machines = initialize_jobShop(num_machines=4, capacity_per_machine=1, jobshop_env= jobshop)
 
-    ddqn = SchedulingAgent(nb_total_operations= all_operations, nb_input_params=4, nb_actions=4)
+    #ddqn = SchedulingAgent(nb_total_operations= all_operations, nb_input_params=4, nb_actions=4)
 
     state = [0,0,0,0]
 
-    for i in range(arglist.num_episodes):
+    recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
 
-        while not overcooked_env.done():
-            action_dict = {}
+    for action in recipeActions:
+        action_dict = {}
 
-            scheduling_rule = ddqn.choose_action(state)
+            #scheduling_rule = ddqn.choose_action(state)
 
-            selected_job, selected_machine = scheduling_rules[scheduling_rule](orders, real_jobshop_machines) 
+            #selected_job, selected_machine = scheduling_rules[scheduling_rule](orders, real_jobshop_machines) 
 
-            action_dict[selected_machine.name] = selected_job.get_next_action()
+            #action_dict[selected_machine.name] = selected_job.get_next_action()
 
-            obs, reward, done, info = overcooked_env.step(action_dict=action_dict)
+        action_dict['agent-1'] = action
 
-            if(info['action_successful']):
-                machine = next([machine for machine in real_jobshop_machines if machine.name == selected_machine.name])
-                selected_action= selected_job.get_next_action()
-                with machine.queue.request() as request:
-                    yield request
-                    print(f"{jobshop.now:.2f}: Job {selected_job.name}, operation {str(selected_action)} started on {machine.name}")
-                    yield jobshop.process(machine.process_job(selected_job.name, str(selected_action), machine.get_processing_time(selected_action)))
+        obs, reward, done, info = overcooked_env.step(action=action_dict)
 
-    
+        machine = [machine for machine in real_jobshop_machines if machine.name == 'agent-1'][0]
+        with machine.queue.request() as request:
+            yield request
+            print(f"{jobshop.now:.2f}: Job 0, operation {str(action)} started on {machine.name}")
+            yield jobshop.process(machine.process_job('0', str(action), machine.get_processing_time(action)))
+    jobshop_end_event.succeed()
+    #jobshop.run(until= 50)
     # if any(x == "ppo" for x in model_types):
     #     train_ppo.learn_ppo(
     #         env_id="overcookedEnv-v0",
@@ -324,6 +325,50 @@ def train_loop(arglist):
     #         tags=parsers.parse_tags(arglist.tags),
     #     )
 
+
+def train_loop_2():
+    scheduler = SchedulingAgent(300,4,4)
+
+    state = np.zeros(4)
+
+    print(state.shape)
+
+    reward = 0
+
+    for i in range(4000):# Training episodes
+
+        if i < 100:
+            action = random.randint(0,3)
+        else:
+            action = scheduler.choose_action(state)
+
+        # execute action in jobshop 
+    
+        next_state = state + 0.25
+
+        done = False
+
+        if action > 2: 
+            reward += 0.5
+        else: 
+            reward -= 0.45 
+
+        scheduler.model.predict_one(state)
+    
+        scheduler.observation(state,action,reward,next_state,done)
+    
+        state = next_state
+
+        if i % 25 == 0: 
+            scheduler.replay()
+
+        if i % UPDATE == 0:
+            print("Target models update")
+            scheduler.update_target_model()
+            
+
+    brkpt = True
+
 if __name__ == "__main__":
     # initializes command line arguments, all missing arguments have default values
     define_arglist()
@@ -350,8 +395,13 @@ if __name__ == "__main__":
             "overcookedEnv-v0", arglist=arglist
         )
         env.reset()
+        # jobshop = simpy.Environment()
+        # jobshop_end_event = simpy.Event(env=jobshop)
+        # jobshop.process(train_loop(arglist= arglist, jobshop=jobshop))
+        # jobshop.run(until = jobshop_end_event)
         game = GamePlay(env.filename, env.world, env.sim_agents)
         game.on_execute()
+
     elif arglist.train or arglist.sweep or arglist.evaluate:
         if arglist.train or arglist.sweep:    
             assert any(_ in ["mappo", "ppo", "seac"] for _ in model_types), "at least one agent must be trained with an RL algorithm for training mode. Please recheck your model types."
@@ -359,18 +409,19 @@ if __name__ == "__main__":
             assert len(model_types) == arglist.num_agents, "num_agents should match the number of models specified. Please recheck your config or arguments."
 
     if arglist.train:
-        train_loop(arglist=arglist)
+        #train_loop(arglist=arglist)
+        train_loop_2()
 
-    elif arglist.sweep:
-        if all(x == 'ppo' for x in model_types):
-            sweep.train_loop_with_sweep_ppo(arglist=arglist)
-        elif all(x == 'seac' for x in model_types):
-            sweep.train_loop_with_sweep_seac(arglist=arglist)
-        elif all(x == 'mappo' for x in model_types):
-            sweep.train_loop_with_sweep_mappo(arglist=arglist)
+    # elif arglist.sweep:
+    #     if all(x == 'ppo' for x in model_types):
+    #         sweep.train_loop_with_sweep_ppo(arglist=arglist)
+    #     elif all(x == 'seac' for x in model_types):
+    #         sweep.train_loop_with_sweep_seac(arglist=arglist)
+    #     elif all(x == 'mappo' for x in model_types):
+    #         sweep.train_loop_with_sweep_mappo(arglist=arglist)
 
-    elif arglist.evaluate:
-        eval_loop(arglist=arglist)
+    # elif arglist.evaluate:
+    #     eval_loop(arglist=arglist)
         
-    else:
-        raise ValueError("Please specify either --play, --train, --sweep, or --evaluate mode.")
+    # else:
+    #     raise ValueError("Please specify either --play, --train, --sweep, or --evaluate mode.")
