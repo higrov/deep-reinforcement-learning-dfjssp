@@ -82,7 +82,7 @@ class Agent:  # one node agent
                 target = reward + DISCOUNT_FACTOR*(self.model.predict(next_state,target=True)[0][action_t])
             target_f = self.model.predict(state)
             target_f[0][action] = target
-            state = state.reshape(1, 4)
+            state = np.array(state).reshape(1, 4)
             loss = self.model.train(state, target_f)
             if loss <= min_loss : 
                 min_loss = loss

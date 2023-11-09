@@ -34,7 +34,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-UPDATE = 400 
+UPDATE = 25 
 
 def define_arglist():
     global global_arglist
@@ -208,11 +208,10 @@ def eval_loop(arglist):
     eval_run.log({"eval_stats": eval_table})
     eval_run.finish()
 
-def train_loop(arglist, jobshop):
-    """The train loop for training RL Agents."""
-    logger.info("Initializing environment and agents for training RL Agents.")
+def train_loop(arglist, jobshop: simpy.Environment):
+    """The train loop for training Scheduler."""
+    logger.info("Initializing environment and agents for training RL Scheduler.")
     arglist.run_id = arglist.run_id if arglist.continue_run else f"{arglist.run_id}{'-' if arglist.run_id else ''}{int(time.time())}"
-    model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4]
 
     overcooked_env: OvercookedEnvironment = gym.envs.make(
             "overcookedEnv-v0", arglist=arglist
@@ -223,7 +222,9 @@ def train_loop(arglist, jobshop):
 
     #ddqn = SchedulingAgent(nb_total_operations= all_operations, nb_input_params=4, nb_actions=4)
 
-    state = [0,0,0,0]
+    scheduler = SchedulingAgent(300,4,4)
+
+    state = np.zeros(4)
 
     recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
 
@@ -245,7 +246,7 @@ def train_loop(arglist, jobshop):
             yield request
             print(f"{jobshop.now:.2f}: Job 0, operation {str(action)} started on {machine.name}")
             yield jobshop.process(machine.process_job('0', str(action), machine.get_processing_time(action)))
-    jobshop_end_event.succeed()
+    
     #jobshop.run(until= 50)
     # if any(x == "ppo" for x in model_types):
     #     train_ppo.learn_ppo(
@@ -326,48 +327,101 @@ def train_loop(arglist, jobshop):
     #     )
 
 
-def train_loop_2():
+# def Train():
+#     overcooked_env: OvercookedEnvironment = gym.envs.make(
+#             "overcookedEnv-v0", arglist=arglist
+#         )
+#     overcooked_env.reset()
+#     real_jobshop_machines = initialize_jobShop(num_machines=4, capacity_per_machine=1, jobshop_env= jobshop)
+#     recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
+
+#     sim_agents = ['agent-1','agent-2','agent-3','agent-4']
+
+#     scheduler = SchedulingAgent(nb_total_operations=5000,nb_input_params=4,nb_actions=4)
+
+#     state = np.zeros(4)
+
+#     for i in range(arglist.num_episodes):# Training episodes
+
+#         rewards =[]
+
+#         # while not done0
+
+#         if i < 100:
+#             action = random.randint(0,3)
+#         else:
+#             action = scheduler.choose_action(state)
+        
+#         action_dict = {}
+
+        
+#         sim_agent = random.choice(sim_agents)
+#         action_choice = random.choice(recipeActions)
+
+#         action_dict[sim_agent] = action_choice
+        
+#         #obs, reward, done, info = overcooked_env.step(action= action_dict) # environment step
+
+#         next_state = state + random.random()
+
+#         reward = random.random()
+
+#         done = False
+
+#         rewards.append(reward)
+        
+#         scheduler.observation(state,action,reward,next_state,done)
+
+#         machine = [machine for machine in real_jobshop_machines if machine.name == sim_agent][0]
+#         with machine.queue.request() as request:
+#             yield request
+#             print(f"{jobshop.now:.2f}: Job 0, operation {str(action_choice)} started on {machine.name}")
+#             yield jobshop.process(machine.process_job('0', str(action_choice), machine.get_processing_time(action_choice)))
+    
+#         if i % 25 == 0: 
+#             scheduler.replay()
+
+#         if i % UPDATE == 0:
+#             print("Target models update")
+#             scheduler.update_target_model()
+
+
+from envs.jobshop_env import MockJobshop
+
+def train_loop_2(jobshop):
     scheduler = SchedulingAgent(300,4,4)
-
-    state = np.zeros(4)
-
-    print(state.shape)
-
-    reward = 0
+    jobshop_env = MockJobshop(num_machines= 4, jobshop_env=jobshop)
 
     for i in range(4000):# Training episodes
-
-        if i < 100:
-            action = random.randint(0,3)
-        else:
-            action = scheduler.choose_action(state)
-
-        # execute action in jobshop 
-    
-        next_state = state + 0.25
-
+        state = np.zeros(4)
+        t = 0
         done = False
+        jobshop_env.reset()
+        while not done:
+            t+=1
+            if t < 100:
+                action = random.randint(0,3)
+            else:
+                action = scheduler.choose_action(state)
 
-        if action > 2: 
-            reward += 0.5
-        else: 
-            reward -= 0.45 
+            # execute action in jobshop 
 
-        scheduler.model.predict_one(state)
-    
-        scheduler.observation(state,action,reward,next_state,done)
-    
-        state = next_state
+            next_state, reward, done = jobshop_env.step(action)  
 
-        if i % 25 == 0: 
-            scheduler.replay()
 
-        if i % UPDATE == 0:
-            print("Target models update")
-            scheduler.update_target_model()
-            
+            #scheduler.model.predict_one(state)
 
-    brkpt = True
+            scheduler.observation(state,action,reward,next_state,done)
+
+            state = next_state
+
+            if t % 25 == 0: 
+                scheduler.replay()
+
+            if t % UPDATE == 0:
+                print("Target models update")
+                scheduler.update_target_model()
+            brkpt = True
 
 if __name__ == "__main__":
     # initializes command line arguments, all missing arguments have default values
@@ -395,12 +449,13 @@ if __name__ == "__main__":
             "overcookedEnv-v0", arglist=arglist
         )
         env.reset()
-        # jobshop = simpy.Environment()
+        jobshop = simpy.Environment()
         # jobshop_end_event = simpy.Event(env=jobshop)
         # jobshop.process(train_loop(arglist= arglist, jobshop=jobshop))
         # jobshop.run(until = jobshop_end_event)
-        game = GamePlay(env.filename, env.world, env.sim_agents)
-        game.on_execute()
+        # game = GamePlay(env.filename, env.world, env.sim_agents)
+        # game.on_execute()
+        train_loop_2(jobshop)
 
     elif arglist.train or arglist.sweep or arglist.evaluate:
         if arglist.train or arglist.sweep:    
