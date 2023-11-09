@@ -67,7 +67,7 @@ class RealAgent:
         self.possible_operations = possible_operations
 
         self.last_operation_executed = None
-        self.last_operation_executed_at = None
+        self.last_operation_executed_at = -1
 
         # Bayesian Delegation.
         # self.reset_subtasks()
@@ -251,6 +251,7 @@ class RealAgent:
                     actions_tm1=env.agent_actions,
                     beta=self.beta,
                 )
+    
     def all_done(self):
         """Return whether this agent is all done.
         An agent is done if all Deliver subtasks are completed."""
@@ -381,15 +382,20 @@ class RealAgent:
             )
 
     def process_job(self, job, operation,  processing_time):
-        yield self.env.timeout(processing_time)  # Simulate processing time
-        print(f"{self.env.now:.2f}: Job {job}, operation {operation} completed on {self.name}")
+        yield self.jobshop_env.timeout(processing_time)  # Simulate processing time
+        print(f"{self.jobshop_env.now:.2f}: Job {job}, operation {operation} completed on {self.name}")
         
     def get_possible_operations(self): 
         return self.possible_operations
     
-    def set_last_operation_executed(self,val: str): self.last_operation_executed = val
+    def set_last_operation_executed(self,val): self.last_operation_executed = val
 
-    def set_last_operation_performed_at(self, val: int): self.last_operation_executed_at = val
+    def set_last_operation_performed_at(self, val): self.last_operation_executed_at = val
+
+    def get_processing_time(self, action): 
+        processing_time = self.possible_operations[action.__class__]
+        return processing_time
+
 
 class SimAgent:
     """Simulation agent used in the environment object."""

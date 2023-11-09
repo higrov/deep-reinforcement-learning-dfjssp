@@ -83,17 +83,19 @@ class Floor(GridSquare):
 
 
 class Order(GridSquare):
-    def __init__(self, recipe: Recipe, location, t, delivery_window):
+    def __init__(self, recipe: Recipe, location, queued_at, delivery_window):
         GridSquare.__init__(self, recipe.name, location)
         self.recipe = recipe
         self.rep = recipe.rep  # instead of Rep.ORDER
         self.full_name = recipe.delivery_name
         self.tasks = recipe.actions
         self.completed_tasks = []
-        self.queued_at = t
+        self.completed_task_machine = []
+        self.queued_at = queued_at
         self.delivered_at = None
         self.delivery_window = delivery_window
         self.earliness_tardiness_weights = (10,30)
+        self.last_task_completion_timestamp = -1
 
         self.delivered = False
         self.duration = -1
@@ -117,15 +119,21 @@ class Order(GridSquare):
 
     def get_delivery_window(self): return self.delivery_window
 
-    def add_completed_tasks(self, val): 
-        self.completed_tasks.append(val)
+    def add_completed_tasks(self, task, machine, timestamp): 
+        self.completed_tasks.append(task)
+        self.completed_task_machine.append((task,machine))
+        self.set_last_task_completion_timestamp(timestamp)
         if(self.completed_tasks == self.tasks):
-            self.set_IsCompleted(True)
+            self.set_completed(True)
 
     def get_completed_tasks(self) : return self.completed_tasks
 
-    def get_next_action(self):
-        uncompleted_tasks = [task for task in self.tasks if task not in [t[0] for t in self.completed_tasks]]
+    def get_last_task_completion_timestamp(self): return self.last_task_completion_timestamp
+
+    def set_last_task_completion_timestamp(self, val): self.last_task_completion_timestamp = val
+
+    def get_next_operation(self):
+        uncompleted_tasks = [task for task in self.tasks if task not in self.completed_tasks]
         return uncompleted_tasks[0]
 
     def get_queued_time(self): return self.queued_at
