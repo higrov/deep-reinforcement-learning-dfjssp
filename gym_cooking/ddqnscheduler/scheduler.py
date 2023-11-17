@@ -8,7 +8,6 @@ from keras.layers import Input, Dense, Flatten
 from keras.regularizers import l2
 import tensorflow as tf
 
-#from rl.agents.dqn import DQNAgent
 import rl
 
 from collections import deque
@@ -42,7 +41,7 @@ from .parameter import *
 warnings.filterwarnings('ignore')
 
 
-class Agent:  # one node agent
+class SchedulingAgent:  # one node agent
     def __init__(self,nb_total_operations, nb_input_params, nb_actions):
         self.model = DoubleDeepQNetwork(nb_input_params, nb_actions)
         self.epsilon = EPSILON_MAX

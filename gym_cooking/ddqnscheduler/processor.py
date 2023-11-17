@@ -1,9 +1,8 @@
-from rl.core import Processor
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 
 ADDITIONAL_STATE = 4
-class NormalizerProcessor(Processor):
+class NormalizerProcessor(object):
     def __init__(self):
         self.scaler = StandardScaler()
         self.normalizer = None
