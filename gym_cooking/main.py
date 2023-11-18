@@ -3,21 +3,16 @@ import logging
 
 import wandb
 from envs.overcooked_environment import OvercookedEnvironment
-from rl import train_mappo
-from rl.mappo.envs.overcooked_environment_ma_wrapper import OverCookedMAEnv
 
 from recipe_planner.recipe import *
 from utils.agent import RealAgent, COLORS
 from utils.core import *
 from misc.game.gameplay import GamePlay
 from utils.world import World
-from rl import train_ppo, train_seac
 
-import simpy
-from ddqnscheduler.scheduler import Agent as SchedulingAgent
+from ddqnscheduler.scheduler import SchedulingAgent as Scheduler
+from ddqnscheduler.parameter import *
 from schedulingrules import *
-
-from recipe_planner.utils import Get, Chop, Merge, Deliver
 
 import utils.utils as utils
 import parsers as parsers
@@ -25,6 +20,8 @@ import sweep as sweep
 
 import gymnasium as gym
 from gymnasium.envs.registration import register
+
+from envs.jobshop_env import JobShop
 
 logging.basicConfig(
     level=logging.INFO,
@@ -43,56 +40,6 @@ def define_arglist():
 def change_arglist(val):
     global global_arglist
     global_arglist = val
-
-
-def initialize_agents(arglist, orders: tuple[Order], jobshop_env, model_types, model_paths,) -> list[RealAgent]:
-    real_agents = []
-
-    with open(f"utils/levels/{arglist.level}.txt", "r") as f:
-        phase = 1
-        recipes = []
-
-        RL = ["mappo", "ppo", "seac"]
-        
-        for line in f:
-            line = line.strip("\n")
-
-            if (
-                line == ""
-            ):  # empty line changes phase from level layout -> recipes -> agent locations
-                phase += 1
-
-            # phase 2: read in recipe list
-            elif phase == 2:
-                recipes.append(globals()[line]())
-
-            # phase 3: read in agent locations (up to num_agents)
-            elif phase == 3:
-                if len(real_agents) < arglist.num_agents:
-                    loc = line.split(" ")
-                    real_agent = RealAgent(
-                        arglist=arglist,
-                        name="agent-" + str(len(real_agents) + 1),
-                        id_color=COLORS[len(real_agents)],
-                        jobshop_env=jobshop_env,
-                        capacity= 1
-                        )
-                    real_agents.append(real_agent)
-
-    return real_agents
-
-
-def initialize_jobShop(num_machines, capacity_per_machine, jobshop_env):
-    machines= []
-    for i in range(num_machines):
-        newMachine = RealAgent(arglist=arglist,
-                               jobshop_env=jobshop_env,
-                               name= 'agent-'+str(len(machines)+1),
-                               capacity= capacity_per_machine,
-                               id_color=COLORS[len(machines)]
-                             )
-        machines.append(newMachine)
-    return machines
 
 
 def eval_loop(arglist):
@@ -208,220 +155,28 @@ def eval_loop(arglist):
     eval_run.log({"eval_stats": eval_table})
     eval_run.finish()
 
-def train_loop(arglist, jobshop: simpy.Environment):
-    """The train loop for training Scheduler."""
-    logger.info("Initializing environment and agents for training RL Scheduler.")
-    arglist.run_id = arglist.run_id if arglist.continue_run else f"{arglist.run_id}{'-' if arglist.run_id else ''}{int(time.time())}"
 
-    overcooked_env: OvercookedEnvironment = gym.envs.make(
-            "overcookedEnv-v0", arglist=arglist
-        )
+def train_loop():
+    scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4)
+    rewards = []
     
-    overcooked_obs = overcooked_env.reset()
-    real_jobshop_machines = initialize_jobShop(num_machines=4, capacity_per_machine=1, jobshop_env= jobshop)
+    for i in range(MAX_EPISODE): # Training episodes
+        # Start the job generation process
+        job_shop = JobShop(scheduler= scheduler, num_machines=4)
+        job_shop.run(1200)
+        scheduler.replay()
 
-    #ddqn = SchedulingAgent(nb_total_operations= all_operations, nb_input_params=4, nb_actions=4)
+        if i % UPDATE == 0:
+            print("Target models update")
+            scheduler.update_target_model()
 
-    scheduler = SchedulingAgent(300,4,4)
-
-    state = np.zeros(4)
-
-    recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
-
-    for action in recipeActions:
-        action_dict = {}
-
-            #scheduling_rule = ddqn.choose_action(state)
-
-            #selected_job, selected_machine = scheduling_rules[scheduling_rule](orders, real_jobshop_machines) 
-
-            #action_dict[selected_machine.name] = selected_job.get_next_action()
-
-        action_dict['agent-1'] = action
-
-        obs, reward, done, info = overcooked_env.step(action=action_dict)
-
-        machine = [machine for machine in real_jobshop_machines if machine.name == 'agent-1'][0]
-        with machine.queue.request() as request:
-            yield request
-            print(f"{jobshop.now:.2f}: Job 0, operation {str(action)} started on {machine.name}")
-            yield jobshop.process(machine.process_job('0', str(action), machine.get_processing_time(action)))
+        scheduler.policy.reset()
+        
+        if np.sum(job_shop.rewards) != 0:
+            rewards.append((i, np.sum(job_shop.rewards)))
+        max_reward = max(rewards, key= lambda x: x[1])
+        brkpt = True
     
-    #jobshop.run(until= 50)
-    # if any(x == "ppo" for x in model_types):
-    #     train_ppo.learn_ppo(
-    #         env_id="overcookedEnv-v0",
-    #         arglist=arglist,
-    #         run_id=arglist.run_id,
-    #         num_total_timesteps=arglist.num_total_timesteps,
-    #         num_steps_per_update=arglist.num_steps_per_update,
-    #         num_processes=arglist.num_processes,
-    #         device=arglist.device,
-    #         lr=arglist.lr,
-    #         batch_size=arglist.batch_size,
-    #         gamma=arglist.gamma,
-    #         gae_lambda=arglist.gae_lambda,
-    #         clip_range=arglist.clip_range,
-    #         entropy_coef=arglist.entropy_coef,
-    #         value_loss_coef=arglist.value_loss_coef,
-    #         max_grad_norm=arglist.max_grad_norm,
-    #         restore=True,
-    #         notes=arglist.notes,
-    #         tags=parsers.parse_tags(arglist.tags),
-    #     )
-    # if any(x == "seac" for x in model_types):
-    #     train_seac.learn_seac(
-    #         env_id="overcookedEnv-v0",
-    #         arglist=arglist,
-    #         run_id=arglist.run_id,
-    #         num_episodes=arglist.num_episodes,
-    #         num_steps_per_episode=arglist.num_timesteps_per_episode,
-    #         num_processes=arglist.num_processes,
-    #         device=arglist.device,
-    #         lr=arglist.lr,
-    #         adam_eps=arglist.adam_eps,
-    #         use_gae=arglist.use_gae,
-    #         gamma=arglist.gamma,
-    #         value_loss_coef=arglist.value_loss_coef,
-    #         entropy_coef=arglist.entropy_coef,
-    #         seac_coef=arglist.seac_coef,
-    #         max_grad_norm=arglist.max_grad_norm,
-    #         restore=True,
-    #         notes=arglist.notes,
-    #         tags=parsers.parse_tags(arglist.tags),
-    #     )
-    # if any(x == "mappo" for x in model_types):
-    #     train_mappo.learn_mappo(
-    #         env_id="overcookedEnv-v0",
-    #         arglist=arglist,
-    #         run_id=arglist.run_id,
-    #         num_total_timesteps=arglist.num_total_timesteps,
-    #         num_processes=arglist.num_processes,
-    #         device=arglist.device,
-    #         share_policy=arglist.share_policy,
-    #         use_centralized_v=arglist.use_centralized_v,
-    #         hidden_size=arglist.hidden_size,
-    #         layer_N=arglist.num_mlp_hidden_layers,
-    #         use_popart=arglist.use_popart,
-    #         use_valuenorm=arglist.use_valuenorm,
-    #         use_feature_normalization=arglist.use_featurenorm,
-    #         use_naive_recurrent_policy=arglist.use_naive_recurrent_policy,
-    #         use_recurrent_policy=arglist.use_recurrent_policy,
-    #         recurrent_N=arglist.num_rnn_hidden_layers,
-    #         data_chunk_length=arglist.rnn_data_length,
-    #         lr=arglist.lr,
-    #         critic_lr=arglist.critic_lr,
-    #         adam_eps=arglist.adam_eps,
-    #         ppo_epoch=arglist.num_epoch,
-    #         clip_param=arglist.clip_range,
-    #         num_mini_batch=arglist.batch_size,
-    #         entropy_coef=arglist.entropy_coef,
-    #         value_loss_coef=arglist.value_loss_coef,
-    #         max_grad_norm=arglist.max_grad_norm,
-    #         use_gae=arglist.use_gae,
-    #         gamma=arglist.gamma,
-    #         gae_lambda=arglist.gae_lambda,
-    #         restore=True,
-    #         notes=arglist.notes,
-    #         tags=parsers.parse_tags(arglist.tags),
-    #     )
-
-
-# def Train():
-#     overcooked_env: OvercookedEnvironment = gym.envs.make(
-#             "overcookedEnv-v0", arglist=arglist
-#         )
-#     overcooked_env.reset()
-#     real_jobshop_machines = initialize_jobShop(num_machines=4, capacity_per_machine=1, jobshop_env= jobshop)
-#     recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
-
-#     sim_agents = ['agent-1','agent-2','agent-3','agent-4']
-
-#     scheduler = SchedulingAgent(nb_total_operations=5000,nb_input_params=4,nb_actions=4)
-
-#     state = np.zeros(4)
-
-#     for i in range(arglist.num_episodes):# Training episodes
-
-#         rewards =[]
-
-#         # while not done0
-
-#         if i < 100:
-#             action = random.randint(0,3)
-#         else:
-#             action = scheduler.choose_action(state)
-        
-#         action_dict = {}
-
-        
-#         sim_agent = random.choice(sim_agents)
-#         action_choice = random.choice(recipeActions)
-
-#         action_dict[sim_agent] = action_choice
-        
-#         #obs, reward, done, info = overcooked_env.step(action= action_dict) # environment step
-
-#         next_state = state + random.random()
-
-#         reward = random.random()
-
-#         done = False
-
-#         rewards.append(reward)
-        
-#         scheduler.observation(state,action,reward,next_state,done)
-
-#         machine = [machine for machine in real_jobshop_machines if machine.name == sim_agent][0]
-#         with machine.queue.request() as request:
-#             yield request
-#             print(f"{jobshop.now:.2f}: Job 0, operation {str(action_choice)} started on {machine.name}")
-#             yield jobshop.process(machine.process_job('0', str(action_choice), machine.get_processing_time(action_choice)))
-    
-#         if i % 25 == 0: 
-#             scheduler.replay()
-
-#         if i % UPDATE == 0:
-#             print("Target models update")
-#             scheduler.update_target_model()
-
-
-from envs.jobshop_env import MockJobshop
-
-def train_loop_2(jobshop):
-    scheduler = SchedulingAgent(300,4,4)
-    jobshop_env = MockJobshop(num_machines= 4, jobshop_env=jobshop)
-
-    for i in range(4000):# Training episodes
-        state = np.zeros(4)
-        t = 0
-        done = False
-        jobshop_env.reset()
-        while not done:
-            t+=1
-            if t < 100:
-                action = random.randint(0,3)
-            else:
-                action = scheduler.choose_action(state)
-
-            # execute action in jobshop 
-
-            next_state, reward, done = jobshop_env.step(action)  
-
-
-            #scheduler.model.predict_one(state)
-
-            scheduler.observation(state,action,reward,next_state,done)
-
-            state = next_state
-
-            if t % 25 == 0: 
-                scheduler.replay()
-
-            if t % UPDATE == 0:
-                print("Target models update")
-                scheduler.update_target_model()
-            brkpt = True
 
 if __name__ == "__main__":
     # initializes command line arguments, all missing arguments have default values
@@ -434,7 +189,6 @@ if __name__ == "__main__":
         
     arglist = parsers.ArgList(**vars(global_arglist))
     # validating agent types
-    model_types = [m for m in [arglist.model1, arglist.model2, arglist.model3, arglist.model4, arglist.model5] if m is not None]
 
     utils.fix_seed(seed=arglist.seed)
     register(
@@ -449,34 +203,10 @@ if __name__ == "__main__":
             "overcookedEnv-v0", arglist=arglist
         )
         env.reset()
-        jobshop = simpy.Environment()
-        # jobshop_end_event = simpy.Event(env=jobshop)
-        # jobshop.process(train_loop(arglist= arglist, jobshop=jobshop))
-        # jobshop.run(until = jobshop_end_event)
-        # game = GamePlay(env.filename, env.world, env.sim_agents)
-        # game.on_execute()
-        train_loop_2(jobshop)
+        game = GamePlay(env.filename, env.world, env.sim_agents)
+        game.on_execute()
+        #train_loop()
 
-    elif arglist.train or arglist.sweep or arglist.evaluate:
-        if arglist.train or arglist.sweep:    
-            assert any(_ in ["mappo", "ppo", "seac"] for _ in model_types), "at least one agent must be trained with an RL algorithm for training mode. Please recheck your model types."
-        else:
-            assert len(model_types) == arglist.num_agents, "num_agents should match the number of models specified. Please recheck your config or arguments."
-
-    if arglist.train:
-        #train_loop(arglist=arglist)
-        train_loop_2()
-
-    # elif arglist.sweep:
-    #     if all(x == 'ppo' for x in model_types):
-    #         sweep.train_loop_with_sweep_ppo(arglist=arglist)
-    #     elif all(x == 'seac' for x in model_types):
-    #         sweep.train_loop_with_sweep_seac(arglist=arglist)
-    #     elif all(x == 'mappo' for x in model_types):
-    #         sweep.train_loop_with_sweep_mappo(arglist=arglist)
-
-    # elif arglist.evaluate:
-    #     eval_loop(arglist=arglist)
-        
-    # else:
-    #     raise ValueError("Please specify either --play, --train, --sweep, or --evaluate mode.")
+    if arglist.train: 
+        train_loop()
+    
