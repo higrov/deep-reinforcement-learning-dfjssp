@@ -10,26 +10,13 @@ from keras.layers import Input, Dense, Flatten
 from keras.regularizers import l2
 import tensorflow as tf
 from .parameter import LEARNING_RATE
-
+import warnings
 
 tf.compat.v1.disable_eager_execution()
 
+warnings.filterwarnings('ignore')
 
-def create_model(shape, nb_actions):
-    model = Sequential()
-    model.add(Input(shape=(shape,)))
-    model.add(Dense(30, activation='relu', name= 'l1'))
-    model.add(Dense(30, activation='relu', name= 'l2'))
-    model.add(Dense(30, activation='relu', name= 'l3'))
-    model.add(Dense(30, activation='relu', name= 'l4'))
-    model.add(Dense(30, activation='relu', name= 'l5'))
-    model.add(Dense(nb_actions, activation='linear',  name= 'l6'))
-    model.compile(optimizer= tf.keras.optimizers.legacy.Adam(lr= LEARNING_RATE), loss="mean_squared_error")
-    model.summary()
-    return model
-
-
-class DoubleDeepQNetwork:
+class DoubleDeepQNetwork():
     def __init__(self, nb_input_params, nb_actions, train= True, model_file= None):
         self.loss_history = []
 
@@ -37,15 +24,30 @@ class DoubleDeepQNetwork:
         self.nb_actions =nb_actions
 
         if train:
-            self.model = create_model(shape= nb_input_params, nb_actions=nb_actions)
-            self.target_model = create_model(shape= nb_input_params, nb_actions=nb_actions)
+            self.model = self.create_model(shape= nb_input_params, nb_actions=nb_actions)
+            self.target_model = self.create_model(shape= nb_input_params, nb_actions=nb_actions)
         else:
             self.model = tf.keras.models.load_model(model_file)
             self.target_model = tf.keras.models.load_model(model_file)
 
-        self.update_target_model()
-    # create the neural network to train the q function
+        self.update_target_model() # create the neural network to train the q function
 
+    def create_model(self,shape, nb_actions):
+        model = Sequential()
+
+        model.add(Input(shape=(shape,)))
+        model.add(Dense(30, activation='relu', name= 'l1'))
+        model.add(Dense(30, activation='relu', name= 'l2'))
+        model.add(Dense(30, activation='relu', name= 'l3'))
+        model.add(Dense(30, activation='relu', name= 'l4'))
+        model.add(Dense(30, activation='relu', name= 'l5'))
+        model.add(Dense(nb_actions, activation='linear',  name= 'l6'))
+
+        model.compile(optimizer= tf.keras.optimizers.legacy.Adam(lr= LEARNING_RATE), loss="mean_squared_error")
+        #model.summary()
+
+        return model
+    
     def train(self, x, y, sample_weight=None, epochs=1, verbose=0):  # x is the input to the network and y is the output
         loss = []
         history = self.model.fit(x, y, epochs=epochs, verbose=verbose)

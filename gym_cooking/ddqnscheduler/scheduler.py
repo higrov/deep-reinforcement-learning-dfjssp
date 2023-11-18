@@ -1,45 +1,18 @@
 import sys
 import numpy as np
-import keras.backend as K
-
-from keras.optimizers import Adam
-from keras.models import Sequential
-from keras.layers import Input, Dense, Flatten
-from keras.regularizers import l2
-import tensorflow as tf
-
-import rl
-
 from collections import deque
 
 from .behaviourpolicy import SoftEpsilonGreedyPolicy
 
-from .processor import NormalizerProcessor
-
-
-
 import numpy as np
 import random
 from .ddqn import DoubleDeepQNetwork
+
 import warnings
 
-
-def create_model(shape, nb_actions):
-    model = Sequential()
-    model.add(Input(input_shape=shape, name= 'l1'))
-    model.add(Dense(30, activation='relu', name= 'l2'))
-    model.add(Dense(30, activation='relu', name= 'l3'))
-    model.add(Dense(30, activation='relu', name= 'l4'))
-    model.add(Dense(30, activation='relu', name= 'l5'))
-    model.add(Dense(30, activation='relu', name= 'l6'))
-    model.add(Dense(nb_actions, activation='linear',  name= 'l7'))
-
-    return model
-
-from .parameter import *
+from .parameter import EPSILON_MAX, EPSILON_MIN, BATCH, DISCOUNT_FACTOR, MAX_EPISODE
 
 warnings.filterwarnings('ignore')
-
 
 class SchedulingAgent:  # one node agent
     def __init__(self,nb_total_operations, nb_input_params, nb_actions):

@@ -26,3 +26,6 @@ class SoftEpsilonGreedyPolicy(object):
             # Choose the action with the highest Q-value
             self.epsilon = max(0.1, self.epsilon - self.e_greedy_decrement)
             return np.argmax(q_values)
+    
+    def reset(self):
+        self.epsilon = self.epsilon - self.e_greedy_decrement
