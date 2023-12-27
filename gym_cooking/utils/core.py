@@ -330,10 +330,21 @@ class Object:
         if len(self.contents) > 1:
             return False
         return self.contents[0].needs_chopped()
+    
+    def needs_grilled(self):
+        if len(self.contents) > 1:
+            return False
+        return self.contents[0].needs_grilled()
 
     def is_chopped(self):
         for c in self.contents:
             if isinstance(c, Plate) or c.get_state() != "Chopped":
+                return False
+        return True
+    
+    def is_grilled(self):
+        for c in self.contents:
+            if isinstance(c, Plate) or c.get_state() != "Grilled":
                 return False
         return True
 
@@ -342,6 +353,13 @@ class Object:
         assert self.needs_chopped()
         self.contents[0].update_state()
         assert not (self.needs_chopped())
+        self.update_names()
+
+    def grill(self):
+        assert len(self.contents) == 1
+        assert self.needs_grilled()
+        self.contents[0].update_state()
+        assert not (self.needs_grilled())
         self.update_names()
 
     def merge(self, obj):
@@ -410,10 +428,12 @@ def mergeable(obj1, obj2):
 class FoodState:
     FRESH = globals()["recipe"].__dict__["Fresh"]
     CHOPPED = globals()["recipe"].__dict__["Chopped"]
+    GRILLED = globals()["recipe"].__dict__["Grilled"]
 
 class FoodSequence:
     FRESH = [FoodState.FRESH]
     FRESH_CHOPPED = [FoodState.FRESH, FoodState.CHOPPED]
+    FRESH_GRILLED = [FoodState.FRESH, FoodState.GRILLED]
 
 
 # -----------------------------------------------------------
@@ -454,6 +474,11 @@ class Food:
         return (
             self.state_seq[(self.state_index + 1) % len(self.state_seq)]
             == FoodState.CHOPPED
+        )
+    def needs_grilled(self):
+        return (
+            self.state_seq[(self.state_index + 1) % len(self.state_seq)]
+            == FoodState.GRILLED
         )
 
     def done(self):
@@ -519,7 +544,7 @@ class Onion(Food):
 class Bun(Food):
     def __init__(self, state_index=0):
         self.state_index = state_index  # index in food's state sequence
-        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.state_seq = FoodSequence.FRESH
         self.rep = "b"
         self.name = "Bun"
         Food.__init__(self)
@@ -547,7 +572,7 @@ class Cheese(Food):
 class Meat(Food):
     def __init__(self, state_index=0):
         self.state_index = state_index  # index in food's state sequence
-        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.state_seq = FoodSequence.FRESH_GRILLED
         self.rep = "m"
         self.name = "Meat"
         Food.__init__(self)

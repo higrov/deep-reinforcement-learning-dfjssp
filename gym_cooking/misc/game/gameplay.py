@@ -4,7 +4,7 @@ from misc.game.utils import *
 from utils.core import *
 from utils.interact import interact, concept_interact
 
-from recipe_planner.utils import Get, Chop, Merge, Deliver
+from recipe_planner.utils import Get, Chop, Merge, Deliver,Grill
 
 # helpers
 import pygame
@@ -74,5 +74,8 @@ class GamePlay(Game):
         self.on_cleanup()
 
 
-recipeActions = [Get('Tomato'),Chop('Tomato'),Merge('Tomato','Plate'),Deliver('Plate-Tomato')]
+recipeActions = [Get('Lettuce'),Chop('Lettuce'),Merge('Lettuce','Plate'),
+                 Get('Tomato'),Chop('Tomato'),Merge('Tomato','Lettuce-Plate'),
+                 Get('Meat'),Grill('Meat'),Merge('Meat','Lettuce-Plate-Tomato'),
+                 Get('Bun'),Merge('Bun','Lettuce-Meat-Plate-Tomato'),Deliver('Bun-Lettuce-Meat-Plate-Tomato')]
 

@@ -4,7 +4,7 @@ import logging
 from utils.world import World
 from utils.core import *
 import numpy as np
-from recipe_planner.utils import Get, Chop, Merge, Deliver
+# from recipe_planner.utils import Get, Chop, Merge, Deliver, Grill
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +34,24 @@ def concept_interact(agent, world: World, action, t=-1):
     # agent does nothing
 
     if(action.name == 'Get'):
-        if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce': 
+        if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce' or action.args[0] == 'Meat' or action.args[0] == 'Bun' : 
             pickFreshIngredient(agent, world, action.args[0])
     
     elif(action.name == 'Chop'):
-        assert agent.holding is not None
+        #assert agent.holding is not None
+        ing = action.args[0]
+        get_fresh_ingredient(agent,ing,world)
         chopIngredient(agent,world)
+    
+    elif(action.name == 'Grill'):
+        #assert agent.holding is not None
+        ing = action.args[0]
+        get_fresh_ingredient(agent,ing,world)
+        grillIngredient(agent,world)
+        brkpt = True
 
     elif(action.name == 'Merge'):
-        assert agent.holding is None
+        #assert agent.holding is None
         obj1 = action.args[0]
         obj2 = action.args[1]
         merge(obj1,obj2,agent,world)
@@ -83,6 +92,28 @@ def pickFreshIngredient(agent,world, ingredient:str):
         agent.acquire(obj)
         world.respawn_components(obj)
 
+        useable_counter = get_useable_counter(world)
+        neighbour_floor = get_direct_neighbour_floor(world,useable_counter.location)
+        agent.move_to(neighbour_floor)
+        gs: GridSquare = world.get_gridsquare_at(useable_counter.location)
+        gs.acquire(obj= obj)
+        agent.release()
+
+def get_fresh_ingredient(agent,ingredient,world):
+    object_list = [elm for elm in world.get_object_list() if isinstance(elm, Object)]
+    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held]
+    ingredient_location = ingredient_list[0].location
+    
+    gs: GridSquare = world.get_gridsquare_at(ingredient_location)
+    obj = world.get_object_at(gs.location, None, find_held_objects = False)
+    if obj is None:
+        return
+    
+    if not obj.is_held:
+        neighbour_floor = get_direct_neighbour_floor(world,ingredient_location)
+        agent.move_to(neighbour_floor)
+        gs.release()
+        agent.acquire(obj)
 
 def chopIngredient(agent,world: World):
     cutboard = get_available_cutboards(world)
@@ -101,6 +132,17 @@ def chopIngredient(agent,world: World):
         # agent.move_to(neighbour_floor)
         # gs.acquire(agent.holding)
         # agent.release()
+
+def grillIngredient(agent,world: World):
+    cutboard = get_available_grill(world)
+    if cutboard is not None:
+        neighbour_floor = get_direct_neighbour_floor(world,cutboard.location)
+        agent.move_to(neighbour_floor)
+        obj = agent.holding
+        gs: GridSquare = world.get_gridsquare_at(cutboard.location)
+        gs.acquire(obj= obj)
+        agent.release()
+        obj.grill()
 
 def pickChoppedIngredient(agent, world: World, ingredient:str):
     plate_with_ing = get_plate_with_ingredient(world,ingredient)
@@ -123,6 +165,19 @@ def get_available_cutboards(world):
             break
     
     return available_cutboard
+
+def get_available_grill(world):
+    grills = world.objects['Grill']
+    empty_grills = [elm for elm in grills if elm.holding is None]
+
+    available_grill = None
+
+    for grill in empty_grills:
+        if isinstance(grill, Grill):
+            available_grill = grill
+            break
+    
+    return available_grill
 
 def mergeWithPlate(obj,world:World,empty_plate):
     gs: GridSquare = world.get_gridsquare_at(empty_plate.location)
@@ -160,7 +215,12 @@ def mergeWithPlateAndIngredient(agent, world, ingredient: str):
         agent.release()
 
 def merge(ingredient,plate, agent,world):
-    ing_obj = next((x for x in world.objects[ingredient] if x.is_chopped()), None)
+    if ingredient == 'Bun':
+        ing_obj = next(x for x in world.objects[ingredient])
+    elif ingredient == 'Meat':
+        ing_obj = next((x for x in world.objects[ingredient] if x.is_grilled()), None)
+    else:    
+        ing_obj = next((x for x in world.objects[ingredient] if x.is_chopped()), None)
 
     plate_obj = next(plt for plt in world.objects[plate] if plt.name == plate)
 
