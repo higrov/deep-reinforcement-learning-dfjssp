@@ -135,3 +135,29 @@ class OnionSalad(Recipe):
         self.actions.append(recipe.Merge('Onion','Lettuce-Plate-Tomato'))
 
         self.add_goal()
+
+class Burger(Recipe):
+    def __init__(self):
+        Recipe.__init__(self, 'Burger', 'B')
+        from utils.core import Tomato,Lettuce, Bun, Meat
+        self.contents.append(Tomato(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
+        self.contents.append(Bun(state_index=-1))
+        self.contents.append(Meat(state_index=-1))
+
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
+
+        self.actions.append(recipe.Get('Tomato'))
+        self.actions.append(recipe.Chop('Tomato'))
+        self.actions.append(recipe.Merge('Tomato','Lettuce-Plate'))
+        
+        self.actions.append(recipe.Get('Meat'))
+        self.actions.append(recipe.Grill('Meat'))
+        self.actions.append(recipe.Merge('Meat','Lettuce-Plate-Tomato'))
+
+        self.actions.append(recipe.Get('Bun'))
+        self.actions.append(recipe.Merge('Bun','Lettuce-Meat-Plate-Tomato'))
+
+        self.add_goal()

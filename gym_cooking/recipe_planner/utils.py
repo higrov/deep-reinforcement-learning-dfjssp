@@ -43,6 +43,11 @@ class Chopped(Predicate):
         Predicate.__init__(self, 'Chopped', (obj,))
         self.state_encoding = 2
 
+class Grilled(Predicate):
+    def __init__(self, obj):
+        Predicate.__init__(self, 'Grilled', (obj,))
+        self.state_encoding = 6
+
 class Cooked(Predicate):
     def __init__(self, obj):
         Predicate.__init__(self, 'Cooked', (obj,))
@@ -136,6 +141,21 @@ class Chop(Action):
         Action.__init__(self, 'Chop', pre, post_add)
 
 '''
+Grill(X)
+Pre: Fresh(X)
+Post: Chopped(X), !Fresh(X)
+'''
+
+class Grill(Action):
+    def __init__(self, obj, pre=None, post_add=None):
+        self.args = (obj,)
+
+        self.pre_default = [Fresh(obj)]
+        self.post_add_default = [Grilled(obj)]
+
+        Action.__init__(self, 'Grill', pre, post_add)
+
+'''
 Merge(X, Y)
 Pre: SomeState(X), SomeState(Y)
 Post: Merged(X-Y), !SomeState(X), !SomeState(Y)
@@ -150,6 +170,8 @@ class Merge(Action):
         self.post_add_default = [Merged('-'.join(sorted(arg1.split('-') + arg2.split('-'))))]
 
         Action.__init__(self, 'Merge', pre, post_add)
+
+
 '''
 Deliver(X)
 Pre: Plated(X)

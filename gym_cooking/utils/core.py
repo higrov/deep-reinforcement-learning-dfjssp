@@ -21,13 +21,16 @@ OrderRepr = namedtuple("OrderRepr", "name recipe_name delivered queued_at delive
 
 class Rep:
     FLOOR = " "
+    BUN = "b"
     COUNTER = "-"
     CUTBOARD = "/"
+    CHEESE = "c"
     DELIVERY = "*"
     TOMATO = "t"
     LETTUCE = "l"
     ONION = "o"
     PLATE = "p"
+    MEAT = "m"
     ORDER = "O"
     GRILL = "g"
 
@@ -94,7 +97,7 @@ class Order(GridSquare):
         self.queued_at = queued_at
         self.delivered_at = None
         self.delivery_window = delivery_window
-        self.earliness_tardiness_weights = (10,30)
+        self.earliness_tardiness_weights = (0.9,0.7)
         self.last_task_completion_timestamp = -1
 
         self.delivered = False
@@ -513,6 +516,47 @@ class Onion(Food):
         return Food.__hash__(self)
 
 
+class Bun(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.rep = "b"
+        self.name = "Bun"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
+
+class Cheese(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.rep = "c"
+        self.name = "Cheese"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
+    
+class Meat(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.rep = "m"
+        self.name = "Meat"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
 # -----------------------------------------------------------
 
 
@@ -550,6 +594,9 @@ RepToClass = {
     Rep.TOMATO: globals()["Tomato"],
     Rep.LETTUCE: globals()["Lettuce"],
     Rep.ONION: globals()["Onion"],
+    Rep.BUN: globals()["Bun"],
+    Rep.CHEESE: globals()["Cheese"],
+    Rep.MEAT: globals()["Meat"],
     Rep.PLATE: globals()["Plate"],
     Rep.ORDER: globals()["Order"],
     Rep.GRILL : globals()["Grill"]
