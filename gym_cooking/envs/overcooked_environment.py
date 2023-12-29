@@ -290,8 +290,8 @@ class OvercookedEnvironment(gym.Env):
         self.t = 0
         self.env_id = env_id
         self.early_termination = early_termination
-        self.levels = arglist.level.split(',')
-        self.curr_level = random.choice(self.levels).strip()
+        self.levels = "open-divider_salad" 
+        self.curr_level = "open-divider_salad"
         self.filename = ''
         self.max_num_agents = 5
         self.max_num_orders = 5
@@ -352,9 +352,15 @@ class OvercookedEnvironment(gym.Env):
         # Only possible actions are up, down, left, right + no-op
         self.action_space = spaces.Discrete(5* self.max_num_agents)
         # global observation space = num_agents
-        self.observation_space = self.get_observation_space_structure()        
+        #self.observation_space = self.get_observation_space_structure()  
+
+        observation_space_dict = {}
+        for agent in self.sim_agents:        
+            observation_space_dict[agent.name] = spaces.Discrete(4)
+             
+        self.observation_space = spaces.Dict(observation_space_dict)
         # number of RL agents being trained (for env wrappers)
-        self.n_agents = len([m for m in [self.arglist.model1, self.arglist.model2, self.arglist.model3, self.arglist.model4] if m in ["mappo", "ppo", "seac"]])
+        self.n_agents = 4
 
         # Recipe Planning stuff for BD
         self.any_bayesian = len(self.sim_agents) > self.n_agents
@@ -445,7 +451,7 @@ class OvercookedEnvironment(gym.Env):
                     elif phase == 1:
                         for x, rep in enumerate(line):
                             # Object, i.e. Tomato, Lettuce, Onion, or Plate.
-                            if rep in "tlop":
+                            if rep in "tlbopm":
                                 counter = Counter(location=(x, y))
                                 obj = Object(location=(x, y), contents=RepToClass[rep]())
                                 counter.acquire(obj=obj)
@@ -606,19 +612,19 @@ class OvercookedEnvironment(gym.Env):
         self.obs_tm1 = copy.copy(self)  # obs for BD
         # to track agent activity
         self.agent_history = {agent.name: deque([self.get_history_repr(agent)], maxlen=11) for agent in self.sim_agents}
-        self.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # obs for RL
+        #self.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # obs for RL
 
         if self.arglist.record:
             self.game.save_image_obs(self.t)
 
-        return self.rl_obs
+        return self
 
     def close(self):
         if self.game:
             self.game.on_cleanup()
         return
     
-    def step(self, action_dict):
+    def step(self, action):
         # Track internal environment info.
         if self.t == 0:
             self.t_0 = perf_counter()
@@ -627,15 +633,18 @@ class OvercookedEnvironment(gym.Env):
         self.orders = tuple(self.world.objects.get("Order")) 
 
         # Parse action
-        for sim_agent in self.sim_agents:
-            if sim_agent.name in action_dict:
-                action_idx = action_dict[sim_agent.name]
-                if 0 <= action_idx < len(self.world.NAV_ACTIONS):
-                    sim_agent.action = self.world.NAV_ACTIONS[action_idx]
-                else:
-                    sim_agent.action = (0, 0) # BD has 50% chance of no-op, MAPPO 20% chance
-            self.agent_history[sim_agent.name].append(self.get_history_repr(sim_agent))
+        # for sim_agent in self.sim_agents:
+        #     if sim_agent.name in action:
+        #         action_idx = action[sim_agent.name]
+        #         if 0 <= action_idx < len(self.world.NAV_ACTIONS):
+        #             sim_agent.action = self.world.NAV_ACTIONS[action_idx]
+        #         else:
+        #             sim_agent.action = (0, 0) # BD has 50% chance of no-op, MAPPO 20% chance
+        #     self.agent_history[sim_agent.name].append(self.get_history_repr(sim_agent))
 
+        agent = next(agent for agent in self.sim_agents if agent.name in action)
+
+        agent.action = action[agent.name]
         # set current state as previous
         self.obs_tm1 = None
         self.obs_tm1 = copy.copy(self)
@@ -643,7 +652,8 @@ class OvercookedEnvironment(gym.Env):
         # Check collisions.
         #self.check_collisions() # stores collisions in self.collisions
         # Perform interaction
-        self.execute_navigation() # append to agent activity
+        interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
+        #self.execute_navigation() # append to agent activity
         # Compute stats based on agent activity
         # if self.is_env_prime():
         #     self.display()
@@ -661,16 +671,16 @@ class OvercookedEnvironment(gym.Env):
             self.game.save_image_obs(self.t)
 
         # Get a plan-representation observation.
-        new_obs = copy.copy(self)
-        new_obs.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # NEW rl obs
+        #new_obs = copy.copy(self)
+        #new_obs.rl_obs = self.get_rl_obs() if self.n_agents > 0 else None  # NEW rl obs
         #new_obs.state = self.get_state()  # NEW state
         # remove redundant variables
-        new_obs.obs_tm1 = None
-        new_obs.game = None
-        new_obs.world = None
+        #new_obs.obs_tm1 = None
+        #new_obs.game = None
+        #new_obs.world = None
 
-        done = self.done() # CENTRALIZED DONE
-        reward = self.reward() # CENTRALIZED REWARD
+        done = False # CENTRALIZED DONE
+        reward = 100 # CENTRALIZED REWARD
             
         info = {
             "t": self.t,
@@ -682,12 +692,14 @@ class OvercookedEnvironment(gym.Env):
             "invalid_actions": self.num_invalid_actions,
             "location_repeaters": self.num_location_repeaters,
             "holding_repeaters": self.num_holding_repeaters,
-            "done": all(done),
-            "reward": sum(reward),
+            "done": False,
+            "reward": 100,
             "termination_info": self.termination_info,
         }
+
+        obs = {agent.name: agent.action for agent in self.sim_agents }
         
-        return new_obs.rl_obs, reward, done, info
+        return obs, reward, done, info
 
     def get_state(self):
         return StateRepr(self.t, self.get_agents_repr(fixed=True), self.get_objects_repr(True))
@@ -762,67 +774,66 @@ class OvercookedEnvironment(gym.Env):
 
     def done(self):
         # Done if the episode maxes out (or queue empty) or no state change in past 5 actions
-        if self.t >= self.arglist.max_num_timesteps:
-            self.successful = not any(self.get_remaining_orders())
-            self.failed = not self.successful
-            if self.arglist.record and not self.arglist.train:
-                self.generate_animation(self.t)
-            self.termination_info = self.get_termination_info(reason=f"Terminating because passed {self.arglist.max_num_timesteps} timesteps")
+        # if self.t >= self.arglist.max_num_timesteps:
+        #     self.successful = not any(self.get_remaining_orders())
+        #     self.failed = not self.successful
+        #     if self.arglist.record and not self.arglist.train:
+        #         self.generate_animation(self.t)
+        #     self.termination_info = self.get_termination_info(reason=f"Terminating because passed {self.arglist.max_num_timesteps} timesteps")
 
-        elif self.early_termination and any([len(self.get_remaining_orders()) == 3 and self.t >= 50, len(self.get_remaining_orders()) == 2 and self.t >= 100, len(self.get_remaining_orders()) == 1 and self.t >= 150]):
-            self.successful = False
-            self.failed = True
-            if self.arglist.record and not self.arglist.train:
-                self.generate_animation(self.t)
-            self.termination_info = self.get_termination_info(reason=f"Terminating because of early return condition: Not enough orders delivered in past {self.t} timesteps")
+        # elif self.early_termination and any([len(self.get_remaining_orders()) == 3 and self.t >= 50, len(self.get_remaining_orders()) == 2 and self.t >= 100, len(self.get_remaining_orders()) == 1 and self.t >= 150]):
+        #     self.successful = False
+        #     self.failed = True
+        #     if self.arglist.record and not self.arglist.train:
+        #         self.generate_animation(self.t)
+        #     self.termination_info = self.get_termination_info(reason=f"Terminating because of early return condition: Not enough orders delivered in past {self.t} timesteps")
         
-        elif all([order.delivered for order in self.orders]):
-            self.successful = True
-            self.failed = False
-            if self.arglist.record and not self.arglist.train:
-                self.generate_animation(self.t)
-            self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
+        # elif all([order.delivered for order in self.orders]):
+        #     self.successful = True
+        #     self.failed = False
+        #     if self.arglist.record and not self.arglist.train:
+        #         self.generate_animation(self.t)
+        #     self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
 
-        elif self.any_bayesian:
-            assert any([isinstance(subtask, recipe_utils.Deliver) for subtask in self.all_subtasks]), "no delivery subtask"
+        # elif self.any_bayesian:
+        #     assert any([isinstance(subtask, recipe_utils.Deliver) for subtask in self.all_subtasks]), "no delivery subtask"
 
-            # Done if subtask is completed.
+        #     # Done if subtask is completed.
             
-            if any(isinstance(subtask, recipe_utils.Deliver) or subtask.name == 'Deliver'for subtask in self.all_subtasks):
-                # Double check all goal_objs are at Delivery.
-                self.successful = True
+        #     if any(isinstance(subtask, recipe_utils.Deliver) or subtask.name == 'Deliver'for subtask in self.all_subtasks):
+        #         # Double check all goal_objs are at Delivery.
+        #         self.successful = True
                 
-                for subtask in self.all_subtasks:
-                    _, goal_obj = nav_utils.get_subtask_obj(subtask)
+        #         for subtask in self.all_subtasks:
+        #             _, goal_obj = nav_utils.get_subtask_obj(subtask)
 
-                    delivery_loc = list(filter(lambda o: o.name == "Delivery", self.world.get_object_list()))[0].location
-                    goal_obj_locs = self.world.get_all_object_locs(obj=goal_obj)
-                    if not any([gol == delivery_loc for gol in goal_obj_locs]):
-                        self.successful = False
-                        self.failed = False
+        #             delivery_loc = list(filter(lambda o: o.name == "Delivery", self.world.get_object_list()))[0].location
+        #             goal_obj_locs = self.world.get_all_object_locs(obj=goal_obj)
+        #             if not any([gol == delivery_loc for gol in goal_obj_locs]):
+        #                 self.successful = False
+        #                 self.failed = False
 
-                #self.successful = self.successful
-                self.failed = False
-                if self.arglist.record and not self.arglist.train:
-                    self.generate_animation(self.t)
-                self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
+        #         #self.successful = self.successful
+        #         self.failed = False
+        #         if self.arglist.record and not self.arglist.train:
+        #             self.generate_animation(self.t)
+        #         self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
                 
-            else:
-                self.successful = True
-                self.failed = False
-                if self.arglist.record and not self.arglist.train:
-                    self.generate_animation(self.t)
-                self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
+        #     else:
+        #         self.successful = True
+        #         self.failed = False
+        #         if self.arglist.record and not self.arglist.train:
+        #             self.generate_animation(self.t)
+        #         self.termination_info = self.get_termination_info(f"Terminating because all orders in queue delivered in {self.t} timesteps")
 
-        done = (([self.successful or self.failed] * len(self.sim_agents)) + self.done_padding)[:self.max_num_agents]
+        # done = (([self.successful or self.failed] * len(self.sim_agents)) + self.done_padding)[:self.max_num_agents]
 
-        if all(done):
-            self.termination_stats['episode_length'] = self.t
-            self.termination_stats['episode_duration'] = perf_counter() - self.t_0
-            self.termination_stats['successful'] = self.successful
-            self.termination_stats['failed'] = self.failed
+        self.termination_stats['episode_length'] = self.t
+        self.termination_stats['episode_duration'] = perf_counter() - self.t_0
+        self.termination_stats['successful'] = self.successful
+        self.termination_stats['failed'] = self.failed
 
-        return done
+        return False
     
     def get_termination_info(self, reason):
         #logger.info(f"{reason}")
@@ -841,20 +852,21 @@ class OvercookedEnvironment(gym.Env):
 
         
     def reward(self):
-        successful = self.successful
-        failed = self.failed
-        timestep = self.t
-        agents = self.sim_agents
-        curr = {a: _[-1] for a, _ in self.agent_history.items()}
-        prev = {a: _[-2] for a, _ in self.agent_history.items()}
-        prev_prev = {a: _[-3] for a, _ in self.agent_history.items()} if self.t > 2 else prev
+        # successful = self.successful
+        # failed = self.failed
+        # timestep = self.t
+        # agents = self.sim_agents
+        # curr = {a: _[-1] for a, _ in self.agent_history.items()}
+        # prev = {a: _[-2] for a, _ in self.agent_history.items()}
+        # prev_prev = {a: _[-3] for a, _ in self.agent_history.items()} if self.t > 2 else prev
         
-        stations = [o for o in self.world.get_object_list() if o.name in ['Cutboard', 'CuttingBoard', 'Stove', 'Grill', 'Delivery']]
-        dynamic_objects = self.world.get_dynamic_object_list()
+        # stations = [o for o in self.world.get_object_list() if o.name in ['Cutboard', 'CuttingBoard', 'Stove', 'Grill', 'Delivery']]
+        # dynamic_objects = self.world.get_dynamic_object_list()
 
-        orders = self.orders
+        # orders = self.orders
         
-        return (RewardHelpers.compute_rewards(successful, failed, timestep, agents, stations, dynamic_objects, orders, curr, prev, prev_prev) + self.reward_padding)[:self.max_num_agents]
+        #return (RewardHelpers.compute_rewards(successful, failed, timestep, agents, stations, dynamic_objects, orders, curr, prev, prev_prev) + self.reward_padding)[:self.max_num_agents]
+        return 100
     
     def get_observation_space_structure(self):
         max_num_timesteps = 200
@@ -1040,13 +1052,13 @@ class OvercookedEnvironment(gym.Env):
         for agent in self.sim_agents:
             interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
             # add to agent history
-            ah = self.agent_history[agent.name][-1]
-            ah.action_type =interaction.action_type
-            ah.delivered = interaction.action_type == "Deliver"
-            ah.invalid_actor = (interaction.action_type == "Wait" and agent.action != (0, 0) and not ah.collided)
-            ah.holding = agent.holding if agent.holding is not None else None
-            ah.location = agent.location
-            self.agent_actions[agent.name] = agent.action
+            # ah = self.agent_history[agent.name][-1]
+            # ah.action_type =interaction.action_type
+            # ah.delivered = interaction.action_type == "Deliver"
+            # ah.invalid_actor = (interaction.action_type == "Wait" and agent.action != (0, 0) and not ah.collided)
+            # ah.holding = agent.holding if agent.holding is not None else None
+            # ah.location = agent.location
+            # self.agent_actions[agent.name] = agent.action
 
     def cache_distances(self):
         """Saving distances between world objects."""

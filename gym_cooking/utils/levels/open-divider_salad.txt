@@ -1,12 +1,12 @@
------t-
+-------
 /     l
-/     -
-*     -
+/     m
+*     b
 -     -
--     p
------p-
+g     t
+-g---p-
 
-SimpleTomato
+Burger
 
 2 1
 4 1

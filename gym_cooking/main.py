@@ -5,7 +5,6 @@ import wandb
 from envs.overcooked_environment import OvercookedEnvironment
 
 from recipe_planner.recipe import *
-from utils.agent import RealAgent, COLORS
 from utils.core import *
 from misc.game.gameplay import GamePlay
 from utils.world import World
@@ -22,6 +21,10 @@ import gymnasium as gym
 from gymnasium.envs.registration import register
 
 from envs.jobshop_env import JobShop
+from schedule_generator import ScheduleGenerator
+import random
+from sklearn.model_selection import train_test_split
+import pandas as pd
 
 logging.basicConfig(
     level=logging.INFO,
@@ -30,8 +33,6 @@ logging.basicConfig(
 )
 
 logger = logging.getLogger(__name__)
-
-UPDATE = 25 
 
 def define_arglist():
     global global_arglist
@@ -155,14 +156,32 @@ def eval_loop(arglist):
     eval_run.log({"eval_stats": eval_table})
     eval_run.finish()
 
+def getSchedule(train = True):
+    scheduleGenerator =  ScheduleGenerator()
+    listofglobalschedule = scheduleGenerator.generateSchedule()
+    if train:
+        train_schedule, _= train_test_split(listofglobalschedule, train_size=0.7)
+        return train_schedule
+    else:
+        
+        _, test_schedule= train_test_split(listofglobalschedule, train_size=0.7)
+        return test_schedule
+
 
 def train_loop():
     scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4)
     rewards = []
-    
+    schedules= []
+    log = pd.DataFrame(
+            columns=['Episode', 'Duration', 'Score', 'Epsilon', 'min_loss'])
+
+    listofglobalschedule = getSchedule(train = True)
+    j = 0
     for i in range(MAX_EPISODE): # Training episodes
         # Start the job generation process
-        job_shop = JobShop(scheduler= scheduler, num_machines=4)
+        globalSchedule = listofglobalschedule[j]
+        globalSchedule= sorted(globalSchedule, key= lambda x: x.queued_at)
+        job_shop = JobShop(scheduler= scheduler, num_machines=4, globalSchedule=globalSchedule)
         job_shop.run(1200)
         scheduler.replay()
 
@@ -175,7 +194,14 @@ def train_loop():
         if np.sum(job_shop.rewards) != 0:
             rewards.append((i, np.sum(job_shop.rewards)))
         max_reward = max(rewards, key= lambda x: x[1])
-        brkpt = True
+
+        schedules.append((job_shop.schedule, np.sum(job_shop.rewards)))
+
+        j += 1
+
+        if j>=len(listofglobalschedule):
+            random.shuffle(listofglobalschedule)
+            j = 0
     
 
 if __name__ == "__main__":
@@ -205,7 +231,6 @@ if __name__ == "__main__":
         env.reset()
         game = GamePlay(env.filename, env.world, env.sim_agents)
         game.on_execute()
-        #train_loop()
 
     if arglist.train: 
         train_loop()

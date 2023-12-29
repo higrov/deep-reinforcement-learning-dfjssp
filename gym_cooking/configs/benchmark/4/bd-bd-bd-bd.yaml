@@ -20,22 +20,12 @@ record: false
 randomize: true
 
 # Mode:
-play: true
-train: false
+play: false
+train: true
 evaluate: false
 sweep: false
 
 # Agents:
-# Model type for agent (seac, ppo, bd, up, dc, fb, or greedy) must match num-agents
-model1: bd
-model2: bd
-model3: bd
-model4: bd
-#Model files -- to load pretrained models (only works for rl and --evaluate mode)
-#model1-path: # path to model file
-#model2-path: 
-#model3-path: 
-#model4-path:
 
 # Training Parameters:
 num-processes: 10 # number of parallel environments

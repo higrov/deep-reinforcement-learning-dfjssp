@@ -1,20 +1,22 @@
 import numpy as np
 
+from recipe_planner.utils import Get, Chop, Merge, Deliver
+
 class StateCalculator:
+    reward_points_operation = {Get: 3, Chop: 10, Merge: 20, Deliver: 50}
     def __init__(self):
         self.penalty = 0
        
     def calculate_state_features(self, uncompleted_jobs, list_machines):
-        average_utilization_rate = self.calculate_average_utilization_rate(schedule= uncompleted_jobs, list_machines=list_machines)
-        estimated_earliness_tardiness_rate= self.calculate_estimated_earliness_tardiness_rate(schedule= uncompleted_jobs, list_machines=list_machines)
+        average_utilization_rate = self.calculate_average_utilization_rate(schedule= uncompleted_jobs, list_machines= list_machines)
+        estimated_earliness_tardiness_rate= self.calculate_estimated_earliness_tardiness_rate(schedule= uncompleted_jobs, list_machines= list_machines)
 
-        actual_earliness_tardiness_rate = self.calculate_actual_earliness_tardiness_rate(schedule= uncompleted_jobs, list_machines=list_machines)
+        actual_earliness_tardiness_rate = self.calculate_actual_earliness_tardiness_rate(schedule= uncompleted_jobs, list_machines= list_machines)
 
-        penalty= self.actual_penalty_cost(schedule= uncompleted_jobs, list_machines=list_machines)
-        reward = self.penalty - penalty
+        penalty= self.actual_penalty_cost(schedule= uncompleted_jobs, list_machines= list_machines)
+        reward = self.calculate_reward(schedule = uncompleted_jobs)
         self.penalty = penalty
         state = [average_utilization_rate, estimated_earliness_tardiness_rate,actual_earliness_tardiness_rate, penalty]
-        #done = self.calculate_done()
         return state, reward
 
     def calculate_average_utilization_rate(self, schedule, list_machines):
@@ -116,16 +118,28 @@ class StateCalculator:
 
                 last_completed_task_timestamp = job.get_last_task_completion_timestamp()
 
-                if(last_completed_task_timestamp> job.delivery_window[1]):
+                if(last_completed_task_timestamp > job.delivery_window[1]):
                     penalty =  job.earliness_tardiness_weights[1] * (last_completed_task_timestamp+ Tleft - job.delivery_window[1])
                     p_num_list.append(penalty)
-                    p_den_list.append(penalty + 10)
+                    p_den_list.append(penalty + 100000000)
 
                 if(last_completed_task_timestamp +Tleft < job.delivery_window[0]):
                     penalty = job.earliness_tardiness_weights[0] * (job.delivery_window[0] - last_completed_task_timestamp - Tleft)
                     p_num_list.append(penalty)
-                    p_den_list.append(penalty + 10)
+                    p_den_list.append(penalty + 100000000)
 
         p_total = sum(p_num_list) / sum(p_den_list)
 
         return p_total
+
+    def calculate_reward(self,schedule):
+        reward_total = 0
+        for job in schedule:
+            # max_reward =  sum([self.reward_points_operation[operation.__class__] for operation in job.tasks])
+            # reward = sum([self.reward_points_operation[operation.__class__] for operation in job.completed_tasks])
+
+            reward_total += job.reward
+
+        netreward = reward_total/len(schedule)
+
+        return netreward

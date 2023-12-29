@@ -24,11 +24,10 @@ AgentRepr = namedtuple("AgentRepr", "name location holding")
 
 # Colors for agents.
 COLORS = ["purple", "green", "blue", "yellow", "magenta"]
-
 # Possible actions_performed by Agents
 class RealMachine:
     """Real Agent object that performs task inference and plans."""
-    possible_operations = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
+    possible_operations = {Get: 30, Merge: 50, Chop: 40, Deliver: 30}
     def __init__(
         self,
         name,
@@ -336,7 +335,7 @@ class RealMachine:
 
 class SimAgent:
     """Simulation agent used in the environment object."""
-
+    possible_operations = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
     def __init__(self, name, id_color, location):
         self.name = name
         self.color = id_color
@@ -345,15 +344,13 @@ class SimAgent:
         self.holding = None
         self.action = None
 
-        self.possible_tasks= possible_operations
-
         self.last_action_performed = None
         self.last_action_performed_at = None
 
     def reset(self):
         self.location = self.spawn_location
         self.action = None
-        self.possible_tasks = possible_operations
+        self.possible_tasks = self.possible_operations
         if self.holding:
             self.holding.is_held = False
             self.holding = None
