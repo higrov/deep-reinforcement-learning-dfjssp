@@ -1,7 +1,7 @@
 # recipe planning
 import math
 #import recipe_planner
-from recipe_planner import Recipe
+from recipe_planner import Recipe, SimpleTomato, SimpleLettuce, Burger, Salad, OnionSalad
 import recipe_planner.utils as recipe
 import time
 
@@ -99,6 +99,7 @@ class Order(GridSquare):
         self.delivery_window = delivery_window
         self.earliness_tardiness_weights = (0.9,0.7)
         self.last_task_completion_timestamp = -1
+        self.reward = 0
 
         self.delivered = False
         self.duration = -1
@@ -113,6 +114,7 @@ class Order(GridSquare):
         self.delivered = False
         self.delivery_window = delivery_window
         self.completed_tasks = []
+        self.reward = 0
 
     def get_tasks(self): return self.tasks
     
@@ -124,6 +126,7 @@ class Order(GridSquare):
 
     def add_completed_tasks(self, task, machine, timestamp): 
         self.completed_tasks.append(task)
+        self.calculate_points(task)
         self.completed_task_machine.append((task,machine))
         self.set_last_task_completion_timestamp(timestamp)
         if(self.completed_tasks == self.tasks):
@@ -140,6 +143,39 @@ class Order(GridSquare):
         return uncompleted_tasks[0]
 
     def get_queued_time(self): return self.queued_at
+
+    def calculate_points(self,task):
+        if(task.__class__ == recipe.Get):
+            self.reward += 0
+
+        elif(task.__class__ == recipe.Chop):
+            if task.args[0] == 'Tomato':
+                self.reward += 2
+            if task.args[0] == 'Onion':
+                self.reward += 4 
+
+        elif (task.__class__ == recipe.Merge):
+            self.reward += 5
+            if task.args[0] == 'Tomato':
+                self.reward += 5 
+            if task.args[0] == 'Onion':
+                self.reward += 15 
+        
+        elif (task.__class__ == recipe.Grill):
+            self.reward += 0
+        
+        elif (task.__class__ == recipe.Deliver):
+            if(self.recipe.__class__ == SimpleLettuce ):
+                self.reward += 20
+            if(self.recipe.__class__ == SimpleTomato ):
+                self.reward += 30
+            if(self.recipe.__class__ == Salad ):
+                self.reward += 50
+            if(self.recipe.__class__ == OnionSalad ):
+                self.reward += 100
+            if(self.recipe.__class__ == Burger ):
+                self.reward += 100
+
 
     def __eq__(self, other):
         return (
