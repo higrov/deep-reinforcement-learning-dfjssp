@@ -62,6 +62,18 @@ def parse_env_arguments(parser, fromConfig):
         help="Comma separated list of levels for this run, defaults to 1st when in --train mode",
     )
     envParser.add_argument(
+        "--schedule_filename",
+        type=str,
+        default=fromConfig("schedule_filename", "test"),
+        help="Name of file of the schedule with Maximum Reward",
+    )
+    envParser.add_argument(
+        "--model_filename",
+        type=str,
+        default=fromConfig("model_filename", "ddqn_model"),
+        help="Name of the file with weights of the DDQN Model",
+    )
+    envParser.add_argument(
         "--num-agents",
         type=int,
         default=fromConfig("num-agents", 2),
@@ -417,6 +429,13 @@ def parse_mode_arguments(parser, fromConfig):
         default=fromConfig("evaluate", False),
         help="Evaluate trained agents",
     )
+
+    modeParser.add_argument(
+        "--test",
+        type=bool,
+        default=fromConfig("test", False),
+        help="Test trained scheduling agent",
+    )
     
     return modeParser
 
@@ -523,4 +542,7 @@ class ArgList:
     train: bool
     sweep: bool
     evaluate: bool
+    test : bool
+    schedule_filename : str
+    model_filename : str
     config: str
