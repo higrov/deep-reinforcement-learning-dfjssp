@@ -11,7 +11,7 @@ from machine import Machine
 from utils.agent import RealMachine, COLORS
 from schedulingrules import *
 from schedule_generator import ScheduleGenerator
-
+import pandas as pd
 # schedule= [Order(Salad(), (0,7), 0, (30,60)), 
 #            Order(SimpleTomato(), (1,7), 2, (35,50)),
 #            Order(Salad(), (1,7), 10, (60,75)),
@@ -50,7 +50,7 @@ class JobShop:
         self.uncompleted_jobs = []
         self.scheduler = scheduler
         self.machines = []
-        self.schedule= []
+        self.schedule= pd.DataFrame(columns = ['Time', 'Machine', 'Task', 'Points'])
 
         self.globalschedule = globalSchedule
 
@@ -74,13 +74,14 @@ class JobShop:
         with machine.queue.request() as request:
             yield request
             yield self.env.process(machine.process_job(job))
-            self.schedule.append((machine.name, next_op))
             if not job.get_completed():
                 self.processable_jobs.append(job)
 
             prev_state = self.state
-            self.state, reward = self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
+            self.state, _= self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
+            reward = job.last_task_reward
             self.rewards.append(reward)
+            self.schedule = pd.concat([self.schedule,  pd.DataFrame([[job.last_task_completion_timestamp, machine.name, str(next_op), reward]], columns = self.schedule.columns)], axis=0, ignore_index=True)
             self.scheduler.observation(prev_state,policy ,reward,self.state,self.calculate_done())
             self.reschedule()
 

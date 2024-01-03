@@ -23,6 +23,13 @@ class DoubleDeepQNetwork():
         self.nb_input_params = nb_input_params
         self.nb_actions =nb_actions
 
+        gpus = tf.config.list_physical_devices('GPU')
+        if(gpus):
+             tf.config.set_visible_devices(gpus[0], 'GPU')
+             tf.device('/physical_device:GPU:1')
+        else:
+            tf.device('/physical_device:CPU:0')
+
         if train:
             self.model = self.create_model(shape= nb_input_params, nb_actions=nb_actions)
             self.target_model = self.create_model(shape= nb_input_params, nb_actions=nb_actions)

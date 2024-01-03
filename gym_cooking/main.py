@@ -46,31 +46,12 @@ def change_arglist(val):
 def eval_loop(arglist):
     """The main evaluation loop for running trials and experiments."""
     logger.info("Initializing environment and agents.")
-    all_levels = arglist.level.split(',')
     run_id = arglist.run_id
-    eval_group = run_id
-    
-    model_types = [arglist.model1, arglist.model2, arglist.model3, arglist.model4, arglist.model5][:arglist.num_agents]
-    model_paths = [arglist.model1_path, arglist.model2_path, arglist.model3_path, arglist.model4_path, arglist.model5_path][:arglist.num_agents]
+
     schedule_dataframe = pd.read_csv(f"{arglist.schedule_filename}.csv", index_col=0)
     group_schedule= schedule_dataframe.groupby('Time')
-
-    eval_columns = ['run_id', 'layout', 'model1', 'model2', 'model3', 'model4', 'model5', 'successful', 'failed', 'episode_length', 'episode_duration', 'deliveries', 'handovers', 'collisions', 'shuffles', 'invalid_actions', 'location_repeaters', 'holding_repeaters', 'order_1_delivery', 'order_2_delivery', 'order_3_delivery', 'order_4_delivery', 'order_5_delivery']
-    
-    #eval_table = wandb.Table(columns=eval_columns)
     
     arglist.run_id = f"{run_id}-{arglist.level}-{int(time.time())}"
-
-    eval_dict = {k: 0 for k in eval_columns}
-    eval_dict['run_id'] = arglist.run_id
-    eval_dict['layout'] = arglist.level
-    for i in range(5):
-        eval_dict[f'model{i+1}'] = '' if i >= arglist.num_agents else model_types[i]
-        eval_dict[f'order_{i+1}_delivery'] = 0
-
-
-    trial = wandb.init(project="Paper-Results", id=arglist.run_id, name=arglist.run_id, group=eval_group, notes=arglist.notes, tags=parsers.parse_tags(arglist.tags), sync_tensorboard=False, resume="allow")
-    # trial_table = wandb.Table(columns=['layout', 'seed', *eval_columns[7:]])
 
     NUM_TRIALS = arglist.num_processes
     logger.info(f'Starting trials for level {arglist.level}')
@@ -100,40 +81,12 @@ def eval_loop(arglist):
             for index, row in data.iterrows():
                 action_dict[row['Machine']] = (group, row['Task'],row['Points'])
 
-            
-
             obs, _, done, info = env.step(action_dict)
             env.render()
                 
 
-
-    #trial.log(env.termination_stats, step=i)
-    #trial_table.add_data(*[arglist.level, i, *list(env.termination_stats.values())])
-    if arglist.record:
-        anim_file = env.get_animation_path()
-        trial.log({"animation": wandb.Video(anim_file, fps=4, format="gif")}, step=i)
-            # update eval_dict with running sum for average later
-    for k, v in env.termination_stats.items():
-        eval_dict[k] += v
-
-
     env.close()
-    #trial.log({"run_stats": trial_table})
-        
-        # average termination stats of all trials
-    for k, v in eval_dict.items():
-        if k in ['run_id', 'layout', 'model1', 'model2', 'model3', 'model4', 'model5']:
-            continue
 
-        eval_dict[k] = v / NUM_TRIALS if k not in ['successful', 'failed'] else v
-
-    #eval_table.add_data(*list(eval_dict.values()))
-    #trial.finish()
-
-    eval_run_summary = f'{run_id}_summary-{int(time.time())}'
-    eval_run = wandb.init(project="Paper-Results", id=eval_run_summary, name=eval_run_summary, group=eval_group, notes=arglist.notes, tags=parsers.parse_tags(arglist.tags), sync_tensorboard=False, resume="allow")
-    #eval_run.log({"eval_stats": eval_table})
-    eval_run.finish()
 
 def getSchedule(train = True):
     scheduleGenerator =  ScheduleGenerator()

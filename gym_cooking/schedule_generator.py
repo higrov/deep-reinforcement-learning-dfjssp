@@ -40,13 +40,5 @@ class ScheduleGenerator:
                                              queued_at=element['activate_at'], 
                                              delivery_window= element['delivery_period']))            
         return overcooked_schedule
-    
-gen = ScheduleGenerator()
-
-gen.generateSchedule()
-
-print(gen.rcll_schedule[0][1]['complexity'])
-
-print(gen.overcooked_schedule[0][1].queued_at)
 
 

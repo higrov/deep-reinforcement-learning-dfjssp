@@ -15,9 +15,10 @@ from .parameter import EPSILON_MAX, EPSILON_MIN, BATCH, DISCOUNT_FACTOR, MAX_EPI
 warnings.filterwarnings('ignore')
 
 class SchedulingAgent:  # one node agent
-    def __init__(self,nb_total_operations, nb_input_params, nb_actions):
-        self.model = DoubleDeepQNetwork(nb_input_params, nb_actions)
+    def __init__(self,nb_total_operations, nb_input_params, nb_actions, train = True, network_model_file = None):
+        self.model = DoubleDeepQNetwork(nb_input_params, nb_actions, train=train,  model_file=network_model_file)
         self.epsilon = EPSILON_MAX
+        self.min_loss = 99999
         self.memory = deque(maxlen=50000)
         self.policy = SoftEpsilonGreedyPolicy(nb_total_operations,self.epsilon, nb_actions)
         self.prediction = np.zeros(nb_actions)
@@ -68,9 +69,9 @@ class SchedulingAgent:  # one node agent
             return 99999
 
         batch = self.sample()
-        min_loss = self.state_target(batch)
+        self.min_loss = self.state_target(batch)
 
-        return min_loss
+        return self.min_loss
 
     def update_target_model(self):
         self.model.update_target_model()

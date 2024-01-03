@@ -14,10 +14,10 @@ class StateCalculator:
         actual_earliness_tardiness_rate = self.calculate_actual_earliness_tardiness_rate(schedule= uncompleted_jobs, list_machines= list_machines)
 
         penalty= self.actual_penalty_cost(schedule= uncompleted_jobs, list_machines= list_machines)
-        reward = self.calculate_reward(schedule = uncompleted_jobs)
+        
         self.penalty = penalty
         state = [average_utilization_rate, estimated_earliness_tardiness_rate,actual_earliness_tardiness_rate, penalty]
-        return state, reward
+        return state
 
     def calculate_average_utilization_rate(self, schedule, list_machines):
         machine_util = 0
@@ -140,6 +140,4 @@ class StateCalculator:
 
             reward_total += job.reward
 
-        netreward = reward_total/len(schedule)
-
-        return netreward
+        return reward_total
