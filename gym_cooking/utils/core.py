@@ -1,7 +1,7 @@
 # recipe planning
 import math
 #import recipe_planner
-from recipe_planner import Recipe, SimpleTomato, SimpleLettuce, Burger, Salad, OnionSalad
+from recipe_planner import Recipe, SimpleBun, BunLettuce, Burger, BunLettuceTomato
 import recipe_planner.utils as recipe
 import time
 
@@ -97,9 +97,10 @@ class Order(GridSquare):
         self.queued_at = queued_at
         self.delivered_at = None
         self.delivery_window = delivery_window
-        self.earliness_tardiness_weights = (0.9,0.7)
+        self.earliness_tardiness_weights = (0.9,0.4)
         self.last_task_completion_timestamp = -1
         self.reward = 0
+        self.last_task_reward = 0
 
         self.delivered = False
         self.duration = -1
@@ -126,9 +127,10 @@ class Order(GridSquare):
 
     def add_completed_tasks(self, task, machine, timestamp): 
         self.completed_tasks.append(task)
+        self.set_last_task_completion_timestamp(timestamp)
         self.calculate_points(task)
         self.completed_task_machine.append((task,machine))
-        self.set_last_task_completion_timestamp(timestamp)
+       
         if(self.completed_tasks == self.tasks):
             self.set_completed(True)
 
@@ -146,36 +148,66 @@ class Order(GridSquare):
 
     def calculate_points(self,task):
         if(task.__class__ == recipe.Get):
-            self.reward += 0
+            self.reward = 0
 
         elif(task.__class__ == recipe.Chop):
             if task.args[0] == 'Tomato':
+                self.last_task_reward = 2
                 self.reward += 2
             if task.args[0] == 'Onion':
+                self.last_task_reward = 4
                 self.reward += 4 
 
         elif (task.__class__ == recipe.Merge):
-            self.reward += 5
+            self.reward = 5
+            self.last_task_reward = 5
             if task.args[0] == 'Tomato':
+                self.last_task_reward += 5
                 self.reward += 5 
             if task.args[0] == 'Onion':
+                self.last_task_reward += 15
                 self.reward += 15 
         
         elif (task.__class__ == recipe.Grill):
-            self.reward += 0
+            self.reward += 15
         
         elif (task.__class__ == recipe.Deliver):
-            if(self.recipe.__class__ == SimpleLettuce ):
+            if(self.recipe.__class__ == SimpleBun ):
                 self.reward += 20
-            if(self.recipe.__class__ == SimpleTomato ):
+            if(self.recipe.__class__ == BunLettuce ):
                 self.reward += 30
-            if(self.recipe.__class__ == Salad ):
+            if(self.recipe.__class__ == BunLettuceTomato ):
                 self.reward += 50
-            if(self.recipe.__class__ == OnionSalad ):
-                self.reward += 100
             if(self.recipe.__class__ == Burger ):
                 self.reward += 100
+            
+            self.reward = self.calculate_net_reward()
+            self.last_task_reward = self.reward
 
+    def calculate_net_reward(self):
+
+        ts = self.delivery_window[0]
+        te = self.delivery_window[1]
+        time_interval = (te -ts) / 5 
+        net_reward = 0
+
+        if self.last_task_completion_timestamp < ts: 
+            net_reward = 0
+        elif ts <= self.last_task_completion_timestamp <= te:
+            net_reward = self.reward
+        elif te < self.last_task_completion_timestamp <= te +time_interval:
+            net_reward = 0.85* self.reward
+        elif (te +time_interval) < self.last_task_completion_timestamp <= (te +(2*time_interval)):    
+            net_reward = 0.7 * self.reward
+        elif (te + (2* time_interval)) < self.last_task_completion_timestamp <= (te +(3*time_interval)):
+            net_reward = 0.55 * self.reward
+        elif (te + (3* time_interval)) < self.last_task_completion_timestamp <= (te +(4*time_interval)): 
+            net_reward = 0.4 * self.reward
+        else:
+            net_reward = 0.25* self.reward
+        
+        return net_reward
+    
 
     def __eq__(self, other):
         return (
@@ -441,6 +473,8 @@ class Object:
 def mergeable(obj1, obj2):
     # query whether two objects are mergeable
     contents = obj1.contents + obj2.contents
+    if(obj1.name == "FreshBun" and obj2.name == "FreshBun" ):
+        return False
     # check that there is at most one plate
     try:
         contents.remove(Plate())

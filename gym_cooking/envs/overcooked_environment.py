@@ -28,6 +28,8 @@ from misc.game.gameimage import GameImage
 from envs.observation_helpers import ObservationHelpers
 from envs.reward_helpers import RewardHelpers
 
+from recipe_planner.utils import Get, Chop, Merge, Deliver,Grill
+
 import sys
 
 logger = logging.getLogger(__name__)
@@ -470,7 +472,10 @@ class OvercookedEnvironment(gym.Env):
                         y += 1
                     # Phase 2: Read in recipe list.
                     elif phase == 2:
-                        self.recipes.append(globals()[line]())
+                        self.recipes.append(globals()['SimpleBun']())
+                        self.recipes.append(globals()['BunLettuce']())
+                        self.recipes.append(globals()['BunLettuceTomato']())
+                        self.recipes.append(globals()['Burger']())
 
                     # Phase 3: Read in agent locations (up to num_agents).
                     elif phase == 3:
@@ -486,12 +491,16 @@ class OvercookedEnvironment(gym.Env):
             # generate order queue from recipe list for level
             self.default_world.objects.setdefault("Order", [])
             delivery_window = (0,10)
+            j=0
             for i in range(num_orders):  # append orders for level
-                random_recipe = self.recipes[np.random.randint(0, len(self.recipes))]
+                
+                random_recipe = self.recipes[j]
                 location = len(self.default_world.objects.get("Order")), y 
                 nextOrder = RepToClass[Rep.ORDER](random_recipe, location, self.t, delivery_window)
                 self.default_world.objects.get("Order").append(nextOrder)
-
+                j+=1
+                if j==len(self.recipes):
+                    j=0
             self.distances = {}
             self.default_world.width = x + 1
             self.default_world.height = y + 1  # + 1 for the orders queue
@@ -624,27 +633,30 @@ class OvercookedEnvironment(gym.Env):
             self.game.on_cleanup()
         return
     
-    def step(self, action):
+    def step(self, action_dict):
         # Track internal environment info.
         if self.t == 0:
             self.t_0 = perf_counter()
         
-        self.t += 1
         self.orders = tuple(self.world.objects.get("Order")) 
 
         # Parse action
-        # for sim_agent in self.sim_agents:
-        #     if sim_agent.name in action:
-        #         action_idx = action[sim_agent.name]
-        #         if 0 <= action_idx < len(self.world.NAV_ACTIONS):
-        #             sim_agent.action = self.world.NAV_ACTIONS[action_idx]
-        #         else:
-        #             sim_agent.action = (0, 0) # BD has 50% chance of no-op, MAPPO 20% chance
-        #     self.agent_history[sim_agent.name].append(self.get_history_repr(sim_agent))
+        for sim_agent in self.sim_agents:
+            if sim_agent.name in action_dict:
+                action_idx = action_dict[sim_agent.name]
+                if action_idx is None:
+                    sim_agent.action = None
+                else:
+                    action_type, arg = action_idx[1].strip("()").split('(')
+                    targets = [t.strip() for t in arg.split(',')]
+                    action = globals().get(action_type)(*targets)
+                    sim_agent.action = action
+                    self.t = action_idx[0]
+            self.agent_history[sim_agent.name].append(self.get_history_repr(sim_agent))
 
-        agent = next(agent for agent in self.sim_agents if agent.name in action)
+        # agent = next(agent for agent in self.sim_agents if agent.name in action_dict)
 
-        agent.action = action[agent.name]
+        
         # set current state as previous
         self.obs_tm1 = None
         self.obs_tm1 = copy.copy(self)
@@ -652,18 +664,18 @@ class OvercookedEnvironment(gym.Env):
         # Check collisions.
         #self.check_collisions() # stores collisions in self.collisions
         # Perform interaction
-        interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
-        #self.execute_navigation() # append to agent activity
+        #interaction: ActionRepr = interact(agent=agent, world=self.world, t=self.t, play=self.arglist.play)
+        self.execute_navigation() # append to agent activity
         # Compute stats based on agent activity
         # if self.is_env_prime():
         #     self.display()
         #     self.print_agents()
 
         
-        self.compute_stats()
+        #self.compute_stats()
         # Count shuffles, handovers, deliveries, invalid actions, location repeaters, holding repeaters
-        if self.arglist.evaluate:
-            self.record_stats() # calculated based on agent activity
+        #if self.arglist.evaluate:
+            #self.record_stats() # calculated based on agent activity
 
         #self.render()
         

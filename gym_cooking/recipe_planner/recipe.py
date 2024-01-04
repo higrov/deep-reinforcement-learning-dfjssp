@@ -9,7 +9,7 @@ class Recipe:
         self.rep = rep
         self.contents = []
         self.actions = []
-        self.actions.append(recipe.Get('Plate'))
+        #self.actions.append(recipe.Get('Plate'))
 
     def __str__(self):
         return self.name
@@ -134,6 +134,51 @@ class OnionSalad(Recipe):
         self.actions.append(recipe.Chop('Onion'))
         self.actions.append(recipe.Merge('Onion','Lettuce-Plate-Tomato'))
 
+        self.add_goal()
+
+class SimpleBun(Recipe):
+    def __init__(self):
+        from utils.core import  Bun
+        Recipe.__init__(self, 'Bun', 'b')
+        self.contents.append(Bun(state_index=-1))
+        self.actions.append(recipe.Get('Bun'))
+        self.actions.append(recipe.Merge('Bun','Plate'))
+        self.add_goal()
+
+class BunLettuce(Recipe):
+    def __init__(self):
+        Recipe.__init__(self, 'BunLettuce', 'bL')
+        from utils.core import Lettuce, Bun
+        self.contents.append(Bun(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
+
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
+        self.actions.append(recipe.Get('Bun'))
+        self.actions.append(recipe.Merge('Bun','Lettuce-Plate'))
+
+        self.add_goal()
+
+class BunLettuceTomato(Recipe):
+    def __init__(self):
+        Recipe.__init__(self, 'BunLettuceTomato', 'bLT')
+        from utils.core import Lettuce, Bun, Tomato
+        self.contents.append(Lettuce(state_index=-1))
+        self.contents.append(Bun(state_index=-1))
+        self.contents.append(Tomato(state_index=-1))
+
+        self.actions.append(recipe.Get('Lettuce'))
+        self.actions.append(recipe.Chop('Lettuce'))
+        self.actions.append(recipe.Merge('Lettuce','Plate'))
+
+        self.actions.append(recipe.Get('Tomato'))
+        self.actions.append(recipe.Chop('Tomato'))
+        self.actions.append(recipe.Merge('Tomato','Lettuce-Plate'))
+
+        self.actions.append(recipe.Get('Bun'))
+        self.actions.append(recipe.Merge('Bun','Lettuce-Plate-Tomato'))
+        
         self.add_goal()
 
 class Burger(Recipe):

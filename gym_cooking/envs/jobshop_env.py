@@ -1,5 +1,4 @@
 import simpy
-import random
 from state_calculator import StateCalculator
 from utils.core import Order
 from recipe_planner.recipe import *
@@ -10,35 +9,8 @@ import copy
 from machine import Machine  
 from utils.agent import RealMachine, COLORS
 from schedulingrules import *
-from schedule_generator import ScheduleGenerator
 import pandas as pd
-# schedule= [Order(Salad(), (0,7), 0, (30,60)), 
-#            Order(SimpleTomato(), (1,7), 2, (35,50)),
-#            Order(Salad(), (1,7), 10, (60,75)),
-#            Order(SimpleLettuce(), (1,7), 10, (40,55)),
-#            Order(Salad(), (1,7), 15, (45,75)),
-#            Order(SimpleTomato(), (1,7), 15, (45,60)),
-#            Order(SimpleTomato(), (0,7), 20, (50,65)), 
-#            Order(Salad(), (1,7), 35, (85,100)),
-#            Order(SimpleLettuce(), (0,7), 60, (90,105)),
-#            Order(Salad(), (0,7), 70, (120,150)),
-#            Order(Salad(), (0,7), 100, (160,200)),
-#            Order(SimpleTomato(), (0,7), 100, (130,180)),
-#            Order(SimpleLettuce(), (0,7), 120, (200,250)),
-#            Order(Salad(), (0,7), 160, (300,380)),
-#            Order(SimpleTomato(), (0,7), 160, (280,340)),
-#            Order(SimpleLettuce(), (0,7), 160, (270,360)),
-#            Order(Salad(), (0,7), 500, (650,720)),
-#            Order(SimpleTomato(), (0,7), 500, (600,680)),
-#            Order(SimpleLettuce(), (0,7), 500, (620,700)),
-#            Order(Salad(), (0,7), 630, (750,900)),
-#            Order(SimpleLettuce(), (0,7), 640, (780,820)),
-#            Order(SimpleTomato(), (0,7), 650, (800,860)),
-#            Order(Salad(), (0,7), 750, (1050,1200)),
-#            Order(SimpleTomato(), (0,7), 800, (1000,1060)),
-#            Order(SimpleLettuce(), (0,7), 820, (1020,1125)),
-#         #    Order(Salad(), (0,7), 80, (30,40)),
-# ]
+
 
 class JobShop:
     def __init__(self, scheduler: Scheduler, num_machines: int, globalSchedule):
@@ -78,13 +50,14 @@ class JobShop:
                 self.processable_jobs.append(job)
 
             prev_state = self.state
-            self.state, _= self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
+            self.state = self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
             reward = job.last_task_reward
             self.rewards.append(reward)
             self.schedule = pd.concat([self.schedule,  pd.DataFrame([[job.last_task_completion_timestamp, machine.name, str(next_op), reward]], columns = self.schedule.columns)], axis=0, ignore_index=True)
             self.scheduler.observation(prev_state,policy ,reward,self.state,self.calculate_done())
             self.reschedule()
-
+    
+    # Rescheduling event
     def reschedule(self):
         if len(self.processable_jobs) > 0:
             policy = self.scheduler.choose_action(self.state)
@@ -93,6 +66,7 @@ class JobShop:
             self.processable_jobs.remove(selected_job)
             self.env.process(self.job_process(selected_machine, selected_job, policy))
 
+    # Adding activated Jobs to open Jobs
     def generate_jobs(self):
         for order in self.globalschedule:
             yield self.env.timeout(order.queued_at - self.env.now)

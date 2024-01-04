@@ -1,8 +1,8 @@
 # command: python main.py --config evaluation/1x3
 # RunInfo:
-run-id: BD-4x1 # for identifying in logs and in folders etc
+run-id: DDQN-4x1 # for identifying in logs and in folders etc
 continue-run: false # continue training from previous run
-notes: Benchmarking BD Pairings 4x3 Layouts
+notes: Benchmarking DDQN 
 tags: Paper-4x1 # comma separated list of tags for this run
 
 # Environment:
@@ -10,25 +10,30 @@ tags: Paper-4x1 # comma separated list of tags for this run
 level: open-divider_salad 
 # partial-divider_salad, full-divider, block-divider_salad, ring-divider_salad, cross-divider_layout, open-divider_onion-salad, block-divider_onion-salad  # level file txt
 num-agents: 4
-num-orders: 3
+num-orders: 7
 max-num-timesteps: 200 # quit after this many timesteps
 max-num-subtasks: 14
 seed: 1
 device: cuda
 # Environment Switches
-record: false
-randomize: true
+record: true
+randomize: false
 
 # Mode:
 play: false
 train: true
 evaluate: false
-sweep: false
+test: false
+
+#schedule File 
+schedule_filename : max_reward_schedule
+
+model_filename : ddqn_model.h5
 
 # Agents:
 
 # Training Parameters:
-num-processes: 10 # number of parallel environments
+num-processes: 1 # number of parallel environments
 # MAPPO and PPO
 num-total-timesteps: 10000000
 num-steps-per-update: 200

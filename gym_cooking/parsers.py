@@ -64,7 +64,7 @@ def parse_env_arguments(parser, fromConfig):
     envParser.add_argument(
         "--schedule_filename",
         type=str,
-        default=fromConfig("schedule_filename", "test"),
+        default=fromConfig("schedule_filename", ""),
         help="Name of file of the schedule with Maximum Reward",
     )
     envParser.add_argument(

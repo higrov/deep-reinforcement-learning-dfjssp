@@ -23,6 +23,8 @@ def interact(agent, world: World, t=-1, play=False):
 
     interaction = concept_interact(agent,world,agent.action)
 
+    agent.action = None
+
     return interaction
 
 
@@ -32,8 +34,14 @@ def concept_interact(agent, world: World, action, t=-1):
     The action that needs to be executed is stored in `agent.action`.
     """
     # agent does nothing
-
+    if action is None: 
+        return ActionRepr(agent.name, agent.location, "Wait", agent.holding)
+    
+    objlist =world.get_dynamic_object_list()
+    
     if(action.name == 'Get'):
+        if action.args[0] == 'Plate':
+            pickEmptyPlate(agent,world)
         if action.args[0] == 'Tomato' or action.args[0] == 'Lettuce' or action.args[0] == 'Meat' or action.args[0] == 'Bun' : 
             pickFreshIngredient(agent, world, action.args[0])
     
@@ -77,7 +85,7 @@ def concept_interact(agent, world: World, action, t=-1):
 
 def pickFreshIngredient(agent,world, ingredient:str):
     object_list = [elm for elm in world.get_object_list() if isinstance(elm, Object)]
-    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held]
+    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held and obj.location == obj.spawn_location]
     ingredient_location = ingredient_list[0].location
     
     gs: GridSquare = world.get_gridsquare_at(ingredient_location)
@@ -99,9 +107,28 @@ def pickFreshIngredient(agent,world, ingredient:str):
         gs.acquire(obj= obj)
         agent.release()
 
+def pickEmptyPlate(agent,world):
+    plate = get_available_plate_source(world)
+    counter = get_useable_counter(world)
+    gs: GridSquare = world.get_gridsquare_at(plate.location)
+    if plate is not None:
+        neighbour_floor = get_direct_neighbour_floor(world,plate.location)
+        agent.move_to(neighbour_floor)
+        gs.release()
+        agent.acquire(plate)
+        world.respawn_components(plate)
+
+        useable_counter = get_useable_counter(world)
+        neighbour_floor = get_direct_neighbour_floor(world,useable_counter.location)
+        agent.move_to(neighbour_floor)
+        gs: GridSquare = world.get_gridsquare_at(useable_counter.location)
+        gs.acquire(obj= plate)
+        agent.release()
+    
+
 def get_fresh_ingredient(agent,ingredient,world):
     object_list = [elm for elm in world.get_object_list() if isinstance(elm, Object)]
-    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held]
+    ingredient_list = [obj for obj in object_list if obj.name==ingredient and not obj.is_chopped() and not obj.is_held and obj.location != obj.spawn_location]
     ingredient_location = ingredient_list[0].location
     
     gs: GridSquare = world.get_gridsquare_at(ingredient_location)
@@ -125,13 +152,16 @@ def chopIngredient(agent,world: World):
         gs.acquire(obj= obj)
         agent.release()
         obj.chop()
+        agent.acquire(obj)
+        gs.release()
 
-        breakpt = True
+        useable_counter = get_useable_counter(world)
+        neighbour_floor = get_direct_neighbour_floor(world,useable_counter.location)
+        agent.move_to(neighbour_floor)
+        gs: GridSquare = world.get_gridsquare_at(useable_counter.location)
+        gs.acquire(obj= obj)
+        agent.release()
 
-        #mergeWithPlate(obj,world,plate)
-        # agent.move_to(neighbour_floor)
-        # gs.acquire(agent.holding)
-        # agent.release()
 
 def grillIngredient(agent,world: World):
     cutboard = get_available_grill(world)
@@ -226,12 +256,12 @@ def merge(ingredient,plate, agent,world):
 
     mergeWithPlate(ing_obj,world,plate_obj)
 
-def get_available_plate(world:World):
+def get_available_plate_source(world:World):
     plates = world.objects['Plate']
     empty_plate= None
 
     for plate in plates:
-        if(isinstance(plate, Object) and any(isinstance(plt, Plate) for plt in plate.contents)):
+        if(isinstance(plate, Object) and any(isinstance(plt, Plate) for plt in plate.contents) and plate.location == plate.spawn_location):
             empty_plate= plate
             break
 
@@ -261,7 +291,7 @@ def deliverOrder(agent,world: World,obj):
     gs_delivery: GridSquare = world.get_gridsquare_at(delivery_location)
     agent.release()
     gs_delivery.acquire(obj)
-    world.remove_order(obj.name, 2)
+    #world.remove_order(obj.name, 2)
     # update env, world and agent orders here, respawn used components and remove delivered object
     #world.respawn_components(obj)
     world.remove(obj)

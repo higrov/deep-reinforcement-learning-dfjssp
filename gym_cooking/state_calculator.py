@@ -30,7 +30,7 @@ class StateCalculator:
                 completed_operations_machine =[oper for oper in job.completed_task_machine if oper[1] == machine.name]
 
                 for (operation, machine_name) in completed_operations_machine:
-                    processing_time = machine.get_possible_operations()[operation.__class__]
+                    processing_time = machine.get_processing_time(operation)
                     task_util += processing_time
 
                 job_util+= task_util
@@ -54,7 +54,7 @@ class StateCalculator:
                 left_tasks= [task for task in job.tasks if task not in job.completed_tasks]
 
                 for left_task in left_tasks: 
-                    tij = np.sum([machine.get_possible_operations()[left_task.__class__] for machine in list_machines])/len(list_machines)
+                    tij = np.sum([machine.get_processing_time(left_task) for machine in list_machines])/len(list_machines)
                     Tleft += tij
                     if Tcur + Tleft > job.delivery_window[1]:
                         NJtard += 1
@@ -86,7 +86,7 @@ class StateCalculator:
                     left_tasks= [task for task in job.tasks if task not in job.completed_tasks]
 
                     for left_task in left_tasks:
-                        tij = np.sum([machine.get_possible_operations()[left_task.__class__] for machine in list_machines])/len(list_machines)
+                        tij = np.sum([machine.get_processing_time(left_task) for machine in list_machines])/len(list_machines)
                         Tleft+= tij
                         if last_completed_task_timestamp+Tleft> job.delivery_window[1]:
                             NJa_tard +=1
@@ -113,7 +113,7 @@ class StateCalculator:
                 left_tasks= [task for task in job.tasks if task not in job.completed_tasks]
 
                 for left_task in left_tasks:
-                    tij = np.sum([machine.get_possible_operations()[left_task.__class__] for machine in list_machines])/len(list_machines)
+                    tij = np.sum([machine.get_processing_time(left_task) for machine in list_machines])/len(list_machines)
                     Tleft+= tij
 
                 last_completed_task_timestamp = job.get_last_task_completion_timestamp()

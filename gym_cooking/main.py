@@ -48,7 +48,7 @@ def eval_loop(arglist):
     logger.info("Initializing environment and agents.")
     run_id = arglist.run_id
 
-    schedule_dataframe = pd.read_csv(f"{arglist.schedule_filename}.csv", index_col=0)
+    schedule_dataframe = pd.read_csv(f"./schedules/{arglist.schedule_filename}.csv", index_col=0)
     group_schedule= schedule_dataframe.groupby('Time')
     
     arglist.run_id = f"{run_id}-{arglist.level}-{int(time.time())}"
@@ -69,7 +69,7 @@ def eval_loop(arglist):
         logger.info(f"Preparing agents")
         env.render()
                 #print(env.t)
-
+        i = 0
         for group in list(group_schedule.groups):
             action_dict = {}
             agent_names = schedule_dataframe['Machine'].unique()
@@ -80,7 +80,7 @@ def eval_loop(arglist):
 
             for index, row in data.iterrows():
                 action_dict[row['Machine']] = (group, row['Task'],row['Points'])
-
+            i = group
             obs, _, done, info = env.step(action_dict)
             env.render()
                 
@@ -147,7 +147,7 @@ def train_loop():
 
     listofglobalschedule = getSchedule(train = True)
     j = 0
-    for i in range(MAX_EPISODE): # Training episodes
+    for i in range(4): # Training episodes
         # Start the job generation process
         globalSchedule = listofglobalschedule[j]
         globalSchedule= sorted(globalSchedule, key= lambda x: x.queued_at)
@@ -175,13 +175,14 @@ def train_loop():
             j = 0
         
         log = pd.concat([log,  pd.DataFrame([[i,np.sum(job_shop.rewards),scheduler.policy.epsilon, scheduler.min_loss]], columns = log.columns)], axis=0, ignore_index=True)
+        print(log)
 
 
-    scheduler.model.save_model("./models/pretrained/DDQN/" + "DDQN-" + "[" + str(MAX_EPISODE) + "]" + str(round(max_reward, 2)) + ".h5")
+    scheduler.model.save_model("./models/pretrained/DDQN/" + "DDQN-" + "[" + str(MAX_EPISODE) + "]" + str(round(max_reward[1], 2)) + ".h5")
     max_reward_schedule = max(schedules, key= lambda x: x[1])
 
     max_reward_schedule[0].to_csv('./schedules/max_reward_schedule.csv')
-    log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward, 2)) + ".csv")
+    log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward[1], 2)) + ".csv")
 
     
 

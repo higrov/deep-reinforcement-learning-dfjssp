@@ -5,6 +5,8 @@ import shutil
 
 from recipe_planner.utils import *
 
+from recipe_planner import Recipe, SimpleBun, BunLettuce, Burger, BunLettuceTomato
+
 
 # Navigation planner
 import navigation_planner.utils as nav_utils
@@ -27,7 +29,7 @@ COLORS = ["purple", "green", "blue", "yellow", "magenta"]
 # Possible actions_performed by Agents
 class RealMachine:
     """Real Agent object that performs task inference and plans."""
-    possible_operations = {Get: 30, Merge: 50, Chop: 40, Deliver: 30}
+    possible_operations = {Get: 11, Merge: 50, Chop: 40, Grill:30, Deliver: 30}
     def __init__(
         self,
         name,
@@ -329,7 +331,32 @@ class RealMachine:
     def set_last_operation_performed_at(self, val): self.last_operation_executed_at = val
 
     def get_processing_time(self, action): 
-        processing_time = self.possible_operations[action.__class__]
+        processing_time = 0
+        #return processing_time
+        if(action.__class__ == Get):
+            processing_time = 1
+
+        elif(action.__class__ == Chop):
+            processing_time = 4
+            if action.args[0] == 'Lettuce':
+                processing_time += 2
+            if action.args[0] == 'Tomato':
+                processing_time += 4 
+
+        elif (action.__class__ == Merge):
+            processing_time = 5
+            if action.args[0] == 'Tomato':
+                processing_time += 17
+            if action.args[0] == 'Meat':
+                processing_time += 17
+            if(action.args[0] == 'Bun'):
+                processing_time += 35
+        
+        elif (action.__class__ == Grill):
+            processing_time += 15
+        
+        elif (action.__class__ == Deliver):
+            processing_time = 10
         return processing_time
 
 

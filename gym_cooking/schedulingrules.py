@@ -19,7 +19,7 @@ def action_dispatching_rule1(schedule, list_machines):
 
     for machine in machine_set: 
         temp = max(machine.last_operation_executed_at if machine.last_operation_executed_at >= 0 else -1, last_completed_task_timestamp_selected_job,selected_job[0].queued_at)
-        temp2 = temp + machine.possible_operations[next_uncompleted_task.__class__]
+        temp2 = temp + machine.get_processing_time(next_uncompleted_task)
         machine_appro.append((machine, temp2))
     
     selected_machine= min(machine_appro, key= select_func)
@@ -33,7 +33,7 @@ def action_dispatching_rule2(uncompleted_jobs, list_machines):
         job_execution_time= 0
         for task in next_uncompleted_tasks:
             machine_set = [machine for machine in list_machines if task.__class__ in machine.possible_operations.keys()]
-            time = np.sum([machine.possible_operations[task.__class__] for machine in machine_set])/len(machine_set)
+            time = np.sum([machine.get_processing_time(task) for machine in machine_set])/len(machine_set)
             job_execution_time += time
 
         execution_times.append((job, job_execution_time))
@@ -79,7 +79,7 @@ def action_dispatching_rule3(schedule, list_machines):
         for job in uncompleted_jobs: 
             tasks_performed.extend([completed_task for completed_task in job.completed_task_machine if machine.name == completed_task[1]])
 
-        machine_load.append((machine,sum(machine.possible_operations[operation.__class__] for operation, machine_name in tasks_performed)))
+        machine_load.append((machine,sum(machine.get_processing_time(operation) for operation, machine_name in tasks_performed)))
 
     selected_machine = min(machine_load, key= select_func)
 
@@ -93,7 +93,7 @@ def action_dispatching_rule4(uncompleted_jobs, list_machines):
         for task in next_uncompleted_tasks:
             suitable_machines = [machine for machine in list_machines if task.__class__ in machine.get_possible_operations().keys()]
 
-            average_execution_time = sum([machine.get_possible_operations()[task.__class__] for machine in suitable_machines])/len(suitable_machines)
+            average_execution_time = sum([machine.get_processing_time(task) for machine in suitable_machines])/len(suitable_machines)
             job_execution_time += average_execution_time
         
         mean_job_execution_times.append((job,job_execution_time))
@@ -110,7 +110,7 @@ def action_dispatching_rule4(uncompleted_jobs, list_machines):
 
     for machine in machine_set: 
         temp = max(machine.last_operation_executed_at if machine.last_operation_executed_at >=0 else -1, last_completed_task_timestamp_selected_job,selected_job[0].queued_at)
-        temp2 = temp + machine.possible_operations[next_uncompleted_task.__class__]
+        temp2 = temp + machine.get_processing_time(next_uncompleted_task)
         machine_appro.append((machine, temp2))
     
     selected_machine= min(machine_appro, key= lambda x: x[1])

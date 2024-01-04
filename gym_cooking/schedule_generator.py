@@ -1,12 +1,12 @@
 from pymongo import MongoClient
-from recipe_planner.recipe import SimpleLettuce, SimpleTomato, OnionSalad, Salad
+from recipe_planner.recipe import SimpleBun, BunLettuce, BunLettuceTomato, Burger
 from utils.core import Order
 
 class ScheduleGenerator: 
-    mappings = {'C0': SimpleLettuce,
-                'C1': SimpleTomato,
-                'C2': Salad,
-                'C3': OnionSalad}
+    mappings = {'C0': SimpleBun,
+                'C1': BunLettuce,
+                'C2': BunLettuceTomato,
+                'C3': Burger}
     def __init__(self) -> None:
 
         self.client = MongoClient("mongodb://localhost:27017")
