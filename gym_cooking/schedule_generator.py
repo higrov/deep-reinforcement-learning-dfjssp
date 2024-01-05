@@ -9,7 +9,7 @@ class ScheduleGenerator:
                 'C3': Burger}
     def __init__(self) -> None:
 
-        self.client = MongoClient("mongodb://localhost:27017")
+        self.client = MongoClient("mongodb+srv://admin:admin@rcll-cluster.hvdxfsw.mongodb.net/")
         self.db = self.client['rcll']
         self.collection = self.db['game_report']
 
