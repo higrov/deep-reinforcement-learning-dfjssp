@@ -78,7 +78,7 @@ class JobShop:
             self.reschedule()
 
     def calculate_done(self):
-        if self.env.now == 1200:
+        if self.env.now == 1200000:
             return True
         return False
 

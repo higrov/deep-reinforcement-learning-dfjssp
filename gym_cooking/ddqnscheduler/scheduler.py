@@ -13,6 +13,7 @@ import warnings
 from .parameter import EPSILON_MAX, EPSILON_MIN, BATCH, DISCOUNT_FACTOR, MAX_EPISODE
 
 warnings.filterwarnings('ignore')
+random.seed(32)
 
 class SchedulingAgent:  # one node agent
     def __init__(self,nb_total_operations, nb_input_params, nb_actions, train = True, network_model_file = None):

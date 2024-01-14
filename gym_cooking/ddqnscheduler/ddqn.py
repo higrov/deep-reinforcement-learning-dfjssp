@@ -57,7 +57,7 @@ class DoubleDeepQNetwork():
     
     def train(self, x, y, sample_weight=None, epochs=1, verbose=0):  # x is the input to the network and y is the output
         loss = []
-        history = self.model.fit(x, y, epochs=epochs, verbose=verbose)
+        history = self.model.fit(x, y, batch_size= len(x), epochs=epochs, verbose=verbose)
         loss.append(history.history['loss'][0])
         return min(loss)
 

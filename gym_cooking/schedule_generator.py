@@ -37,8 +37,8 @@ class ScheduleGenerator:
         for element in rcll_schedule:
             overcooked_schedule.append(Order(recipe =self.mappings[element['complexity']](), 
                                              location=(0,7), 
-                                             queued_at=element['activate_at'], 
-                                             delivery_window= element['delivery_period']))            
+                                             queued_at=element['activate_at']*1000, 
+                                             delivery_window= tuple([1000*x for x in element['delivery_period']])))            
         return overcooked_schedule
 
 

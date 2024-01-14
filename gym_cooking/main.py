@@ -100,23 +100,21 @@ def getSchedule(train = True):
         return test_schedule
 
 def test_loop(arglist):
-    scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4,train=False,network_model_file=arglist.model_filename)
+    scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4,train=False,
+                          network_model_file="./models/pretrained/DDQN/trained/" + arglist.model_filename)
     rewards = []
     schedules= []
     test_log = pd.DataFrame(
-            columns=['Episode', 'Score', 'Epsilon', 'min_loss'])
+            columns=['Episode', 'Score'])
 
     listofglobalschedule = getSchedule(train = False)
     j = 0
-    for i in range(MAX_EPISODE): # Training episodes
+    for i in range(len(listofglobalschedule)): # Training episodes
         # Start the job generation process
         globalSchedule = listofglobalschedule[j]
         globalSchedule= sorted(globalSchedule, key= lambda x: x.queued_at)
         job_shop = JobShop(scheduler= scheduler, num_machines=4, globalSchedule=globalSchedule)
-        job_shop.run(1200)
-        min_loss= scheduler.replay()
-
-        scheduler.policy.reset()
+        job_shop.run(1200000)
         
         if np.sum(job_shop.rewards) != 0:
             rewards.append((i, np.sum(job_shop.rewards)))
@@ -131,28 +129,37 @@ def test_loop(arglist):
             random.shuffle(listofglobalschedule)
             j = 0
         
-        test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards),scheduler.policy.epsilon, scheduler.min_loss]], columns = test_log.columns)], axis=0, ignore_index=True)
+        test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards)]], columns = test_log.columns)], axis=0, ignore_index=True)
 
     max_reward_schedule = max(schedules, key= lambda x: x[1])
 
-    max_reward_schedule[0].to_csv('./schedules/max_reward_schedule_test.csv')
-    test_log.to_csv("./logs/test_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward, 2)) + ".csv")
+    # max_reward_schedule[0].to_csv('./schedules/max_reward_schedule_test.csv')
+    # test_log.to_csv("./logs/test_log/" + "log-"+ "[" + str(len(listofglobalschedule)) + "]" + str(round(max_reward[1], 2)) + ".csv")
 
-def train_loop():
-    scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4,train=True)
+    return test_log
+
+def train_loop(arglist):
     rewards = []
     schedules= []
     log = pd.DataFrame(
             columns=['Episode', 'Score', 'Epsilon', 'min_loss'])
+    test_log = pd.DataFrame(
+            columns=['Episode', 'Score'])
 
     listofglobalschedule = getSchedule(train = True)
+    n_operations = 0
+    for schedule in listofglobalschedule:
+        for order in schedule:
+            n_operations += len(order.recipe.actions)
+
+    scheduler = Scheduler(nb_total_operations=n_operations, nb_input_params=4, nb_actions=4,train=True)
     j = 0
-    for i in range(4): # Training episodes
+    for i in range(MAX_EPISODE): # Training episodes
         # Start the job generation process
         globalSchedule = listofglobalschedule[j]
         globalSchedule= sorted(globalSchedule, key= lambda x: x.queued_at)
         job_shop = JobShop(scheduler= scheduler, num_machines=4, globalSchedule=globalSchedule)
-        job_shop.run(1200)
+        job_shop.run(1200000)
         min_loss= scheduler.replay()
 
         if i % UPDATE == 0:
@@ -160,6 +167,13 @@ def train_loop():
             scheduler.update_target_model()
 
         scheduler.policy.reset()
+
+        if(i % 10000 == 0):
+            scheduler.model.save_model("./models/pretrained/DDQN/trained/" + arglist.model_filename)
+            test_log_temp= test_loop(arglist)
+            test_log = pd.concat([test_log, test_log_temp], axis=0, ignore_index=True)
+            test_log.to_csv("./logs/test_log/" + "test_log-"+ "[5000]" + ".csv")
+            
         
         if np.sum(job_shop.rewards) != 0:
             rewards.append((i, np.sum(job_shop.rewards)))
@@ -183,6 +197,7 @@ def train_loop():
 
     max_reward_schedule[0].to_csv('./schedules/max_reward_schedule.csv')
     log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward[1], 2)) + ".csv")
+    test_log.to_csv("./logs/test_log/" + "test_log-"+ "[" + str(5000) + "]" + ".csv")
 
     
 
@@ -215,7 +230,7 @@ if __name__ == "__main__":
         game.on_execute()
 
     if arglist.train: 
-        train_loop()
+        train_loop(arglist)
     
     elif arglist.evaluate:
         eval_loop(arglist)

@@ -9,7 +9,7 @@ class Recipe:
         self.rep = rep
         self.contents = []
         self.actions = []
-        #self.actions.append(recipe.Get('Plate'))
+        self.actions.append(recipe.Get('Plate'))
 
     def __str__(self):
         return self.name
@@ -164,8 +164,8 @@ class BunLettuceTomato(Recipe):
     def __init__(self):
         Recipe.__init__(self, 'BunLettuceTomato', 'bLT')
         from utils.core import Lettuce, Bun, Tomato
-        self.contents.append(Lettuce(state_index=-1))
         self.contents.append(Bun(state_index=-1))
+        self.contents.append(Lettuce(state_index=-1))
         self.contents.append(Tomato(state_index=-1))
 
         self.actions.append(recipe.Get('Lettuce'))
@@ -185,9 +185,9 @@ class Burger(Recipe):
     def __init__(self):
         Recipe.__init__(self, 'Burger', 'B')
         from utils.core import Tomato,Lettuce, Bun, Meat
+        self.contents.append(Bun(state_index=-1))
         self.contents.append(Tomato(state_index=-1))
         self.contents.append(Lettuce(state_index=-1))
-        self.contents.append(Bun(state_index=-1))
         self.contents.append(Meat(state_index=-1))
 
         self.actions.append(recipe.Get('Lettuce'))

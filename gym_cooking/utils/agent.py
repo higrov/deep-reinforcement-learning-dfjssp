@@ -331,32 +331,36 @@ class RealMachine:
     def set_last_operation_performed_at(self, val): self.last_operation_executed_at = val
 
     def get_processing_time(self, action): 
-        processing_time = 0
-        #return processing_time
+        processing_time = 4000
+
         if(action.__class__ == Get):
-            processing_time = 1
+            if(action.args[0] == 'Plate'):
+                processing_time += 1100
+            if action.args[0] == 'Tomato':
+                processing_time += 10000
+            if(action.args[0] == 'Bun'):
+                processing_time += 17660
+
 
         elif(action.__class__ == Chop):
-            processing_time = 4
-            if action.args[0] == 'Lettuce':
-                processing_time += 2
+            processing_time += 1538
             if action.args[0] == 'Tomato':
-                processing_time += 4 
+                 processing_time += 5000
 
         elif (action.__class__ == Merge):
-            processing_time = 5
-            if action.args[0] == 'Tomato':
-                processing_time += 17
-            if action.args[0] == 'Meat':
-                processing_time += 17
+            processing_time += 2656
+            if action.args[0] == 'Tomato' or action.args[0] == 'Meat' or action.args[0] == 'Lettuce':
+                processing_time += 17308
             if(action.args[0] == 'Bun'):
-                processing_time += 35
+                processing_time += 17500
         
         elif (action.__class__ == Grill):
-            processing_time += 15
+            processing_time += 1538
+            processing_time += 10000
         
         elif (action.__class__ == Deliver):
-            processing_time = 10
+            processing_time += 4746
+            
         return processing_time
 
 
@@ -430,3 +434,43 @@ class SimAgent:
     def set_last_operation_executed(self,val: str): self.last_operation_executed = val
 
     def set_last_action_performed_at(self, val: int): self.last_action_performed_at = val
+
+    def get_processing_time(self, action): 
+        processing_time = 0
+        #return processing_time
+        if(action.__class__ == Get):
+            if(action.args[0] == 'Bun'):
+                processing_time += 17660
+
+
+        elif(action.__class__ == Chop):
+            processing_time += 4194
+            if action.args[0] == 'Tomato':
+                processing_time += 10000
+            if action.args[0] == 'Lettuce':
+                processing_time += 5000
+
+        elif (action.__class__ == Merge):
+            processing_time = 17308
+            if action.args[0] == 'Tomato':
+                processing_time += 17308
+            if action.args[0] == 'Meat':
+                processing_time += 17308
+            if(action.args[0] == 'Bun'):
+                processing_time += 35348
+        
+        elif (action.__class__ == Grill):
+                processing_time += 15000
+        
+        elif (action.__class__ == Deliver):
+            processing_time = 10
+            if(action.args[0] == "Bun-Plate" ):
+                processing_time = 10
+            if(action.args[0] == "Bun-Lettuce-Plate" ):
+                processing_time = 10
+            if(action.args[0]== 'Bun-Lettuce-Plate-Tomato' ):
+                processing_time += 50
+            
+            if(action.args[0] == 'Bun-Lettuce-Meat-Plate-Tomato' ):
+                processing_time= 100
+        return processing_time
