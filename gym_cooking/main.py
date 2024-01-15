@@ -105,7 +105,7 @@ def test_loop(arglist):
     rewards = []
     schedules= []
     test_log = pd.DataFrame(
-            columns=['Episode', 'Score'])
+            columns=['Episode', 'Score','Num Operations'])
 
     listofglobalschedule = getSchedule(train = False)
     j = 0
@@ -129,7 +129,7 @@ def test_loop(arglist):
             random.shuffle(listofglobalschedule)
             j = 0
         
-        test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards)]], columns = test_log.columns)], axis=0, ignore_index=True)
+        test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards),job_shop.num_op_exceuted]], columns = test_log.columns)], axis=0, ignore_index=True)
 
     max_reward_schedule = max(schedules, key= lambda x: x[1])
 
@@ -142,9 +142,9 @@ def train_loop(arglist):
     rewards = []
     schedules= []
     log = pd.DataFrame(
-            columns=['Episode', 'Score', 'Epsilon', 'min_loss'])
+            columns=['Episode', 'Score','Num Operations', 'Epsilon', 'min_loss'])
     test_log = pd.DataFrame(
-            columns=['Episode', 'Score'])
+            columns=['Episode', 'Score','Num Operations'])
 
     listofglobalschedule = getSchedule(train = True)
     n_operations = 0
@@ -188,7 +188,7 @@ def train_loop(arglist):
             random.shuffle(listofglobalschedule)
             j = 0
         
-        log = pd.concat([log,  pd.DataFrame([[i,np.sum(job_shop.rewards),scheduler.policy.epsilon, scheduler.min_loss]], columns = log.columns)], axis=0, ignore_index=True)
+        log = pd.concat([log,  pd.DataFrame([[i,np.sum(job_shop.rewards),job_shop.num_op_exceuted,scheduler.policy.epsilon, scheduler.min_loss]], columns = log.columns)], axis=0, ignore_index=True)
         print(log)
 
 

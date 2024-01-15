@@ -336,10 +336,10 @@ class RealMachine:
         if(action.__class__ == Get):
             if(action.args[0] == 'Plate'):
                 processing_time += 1100
-            if action.args[0] == 'Tomato':
-                processing_time += 10000
+            if action.args[0] == 'Tomato' or action.args[0] == 'Meat' or action.args[0] == 'Lettuce':
+                processing_time += 1538
             if(action.args[0] == 'Bun'):
-                processing_time += 17660
+                processing_time += 4000
 
 
         elif(action.__class__ == Chop):
@@ -355,7 +355,6 @@ class RealMachine:
                 processing_time += 17500
         
         elif (action.__class__ == Grill):
-            processing_time += 1538
             processing_time += 10000
         
         elif (action.__class__ == Deliver):

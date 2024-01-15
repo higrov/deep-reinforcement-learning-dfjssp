@@ -22,6 +22,7 @@ class JobShop:
         self.uncompleted_jobs = []
         self.scheduler = scheduler
         self.machines = []
+        self.num_op_exceuted = 0
         self.schedule= pd.DataFrame(columns = ['Time', 'Machine', 'Task', 'Points'])
 
         self.globalschedule = globalSchedule
@@ -48,7 +49,7 @@ class JobShop:
             yield self.env.process(machine.process_job(job))
             if not job.get_completed():
                 self.processable_jobs.append(job)
-
+            self.num_op_exceuted +=1
             prev_state = self.state
             self.state = self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
             reward = job.last_task_reward

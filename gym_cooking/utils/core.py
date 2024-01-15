@@ -147,29 +147,35 @@ class Order(GridSquare):
     def get_queued_time(self): return self.queued_at
 
     def calculate_points(self,task):
+        self.last_task_reward = 0
         if(task.__class__ == recipe.Get):
-            self.reward = 0
+            self.reward += 0
+            self.last_task_reward = 0
+            if task.args[0] == 'Bun':
+                self.last_task_reward += 2
+                self.reward += 2
 
         elif(task.__class__ == recipe.Chop):
             if task.args[0] == 'Tomato':
-                self.last_task_reward = 2
+                self.last_task_reward += 2
                 self.reward += 2
-            if task.args[0] == 'Onion':
-                self.last_task_reward = 4
-                self.reward += 4 
+        
+        elif (task.__class__ == recipe.Grill):
+            self.last_task_reward = 4
+            self.reward += 4
 
         elif (task.__class__ == recipe.Merge):
-            self.reward = 5
-            self.last_task_reward = 5
+            self.reward += 5
+            self.last_task_reward += 5
             if task.args[0] == 'Tomato':
                 self.last_task_reward += 5
                 self.reward += 5 
-            if task.args[0] == 'Onion':
+            if task.args[0] == 'Meat':
                 self.last_task_reward += 15
-                self.reward += 15 
-        
-        elif (task.__class__ == recipe.Grill):
-            self.reward += 15
+                self.reward += 15
+            if task.args[0] == 'Bun':
+                self.last_task_reward += 5
+                self.reward += 5
         
         elif (task.__class__ == recipe.Deliver):
             if(self.recipe.__class__ == SimpleBun ):
