@@ -185,7 +185,7 @@ def train_loop(arglist):
         j += 1
 
         if j>=len(listofglobalschedule):
-            random.shuffle(listofglobalschedule)
+            #random.shuffle(listofglobalschedule)
             j = 0
         
         log = pd.concat([log,  pd.DataFrame([[i,np.sum(job_shop.rewards),job_shop.num_op_exceuted,scheduler.policy.epsilon, scheduler.min_loss]], columns = log.columns)], axis=0, ignore_index=True)
