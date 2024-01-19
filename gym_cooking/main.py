@@ -102,7 +102,7 @@ def getSchedule(train = True):
 def test_loop(arglist):
     scheduler = Scheduler(nb_total_operations=10000, nb_input_params=4, nb_actions=4,train=False,
                           network_model_file="./models/pretrained/DDQN/trained/" + arglist.model_filename)
-    rewards = []
+
     schedules= []
     test_log = pd.DataFrame(
             columns=['Episode', 'Score','Num Operations'])
@@ -116,12 +116,13 @@ def test_loop(arglist):
         job_shop = JobShop(scheduler= scheduler, num_machines=4, globalSchedule=globalSchedule)
         job_shop.run(1200000)
         
-        if np.sum(job_shop.rewards) != 0:
-            rewards.append((i, np.sum(job_shop.rewards)))
+        # if np.sum(job_shop.rewards) != 0:
+        #     rewards.append((i, np.sum(job_shop.rewards)))
 
-        max_reward = max(rewards, key= lambda x: x[1])
+        if(max_reward < np.sum(job_shop.rewards)):
+            max_reward = np.sum(job_shop.rewards)
+            schedules.append((job_shop.schedule, np.sum(job_shop.rewards)))
 
-        schedules.append((job_shop.schedule, np.sum(job_shop.rewards)))
 
         j += 1
 
@@ -131,7 +132,7 @@ def test_loop(arglist):
         
         test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards),job_shop.num_op_exceuted]], columns = test_log.columns)], axis=0, ignore_index=True)
 
-    max_reward_schedule = max(schedules, key= lambda x: x[1])
+    #max_reward_schedule = max(schedules, key= lambda x: x[1])
 
     # max_reward_schedule[0].to_csv('./schedules/max_reward_schedule_test.csv')
     # test_log.to_csv("./logs/test_log/" + "log-"+ "[" + str(len(listofglobalschedule)) + "]" + str(round(max_reward[1], 2)) + ".csv")
@@ -139,8 +140,8 @@ def test_loop(arglist):
     return test_log
 
 def train_loop(arglist):
-    rewards = []
     schedules= []
+    max_reward = 0
     log = pd.DataFrame(
             columns=['Episode', 'Score','Num Operations', 'Epsilon', 'min_loss'])
     test_log = pd.DataFrame(
@@ -172,15 +173,15 @@ def train_loop(arglist):
             scheduler.model.save_model("./models/pretrained/DDQN/trained/" + arglist.model_filename)
             test_log_temp= test_loop(arglist)
             test_log = pd.concat([test_log, test_log_temp], axis=0, ignore_index=True)
-            test_log.to_csv("./logs/test_log/" + "test_log-"+ "[5000]" + ".csv")
+            test_log.to_csv("./logs/test_log/" + "test_log-"+ "[10000]" + ".csv")
             
         
-        if np.sum(job_shop.rewards) != 0:
-            rewards.append((i, np.sum(job_shop.rewards)))
+        # if np.sum(job_shop.rewards) != 0:
+        #     rewards.append((i, np.sum(job_shop.rewards)))
 
-        max_reward = max(rewards, key= lambda x: x[1])
-
-        schedules.append((job_shop.schedule, np.sum(job_shop.rewards)))
+        if(max_reward < np.sum(job_shop.rewards)):
+            max_reward = np.sum(job_shop.rewards)
+            schedules.append((job_shop.schedule, np.sum(job_shop.rewards)))
 
         j += 1
 
@@ -197,7 +198,7 @@ def train_loop(arglist):
 
     max_reward_schedule[0].to_csv('./schedules/max_reward_schedule.csv')
     log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward[1], 2)) + ".csv")
-    test_log.to_csv("./logs/test_log/" + "test_log-"+ "[" + str(5000) + "]" + ".csv")
+    #test_log.to_csv("./logs/test_log/" + "test_log-"+ "[" + str(10000) + "]" + ".csv")
 
     
 
