@@ -108,6 +108,7 @@ def test_loop(arglist):
             columns=['Episode', 'Score','Num Operations'])
 
     listofglobalschedule = getSchedule(train = False)
+    max_reward = 0
     j = 0
     for i in range(len(listofglobalschedule)): # Training episodes
         # Start the job generation process
