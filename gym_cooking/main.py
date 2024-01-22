@@ -195,11 +195,11 @@ def train_loop(arglist):
 
         log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + ".csv")
 
-    scheduler.model.save_model("./models/pretrained/DDQN/" + "DDQN-" + "[" + str(MAX_EPISODE) + "]" + str(round(max_reward, 2)) + ".h5")
+    scheduler.model.save_model("./models/pretrained/DDQN/" + "DDQN-" + "[" + str(MAX_EPISODE) + "]" + str(int(max_reward)) + ".h5")
     max_reward_schedule = max(schedules, key= lambda x: x[1])
 
     max_reward_schedule[0].to_csv('./schedules/max_reward_schedule.csv')
-    log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(round(max_reward, 2)) + ".csv")
+    log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(int(max_reward)) + ".csv")
     #test_log.to_csv("./logs/test_log/" + "test_log-"+ "[" + str(10000) + "]" + ".csv")
 
 

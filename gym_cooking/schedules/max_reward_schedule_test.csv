@@ -1,0 +1,92 @@
+,Time,Machine,Task,Points
+0,5100,agent-1,Get(Plate),0
+1,10200,agent-1,Get(Plate),0
+2,15300,agent-1,Get(Plate),0
+3,20400,agent-1,Get(Plate),0
+4,20838,agent-2,Get(Lettuce),0
+5,25938,agent-1,Get(Lettuce),0
+6,26376,agent-3,Chop(Lettuce),0
+7,31476,agent-2,Chop(Lettuce),0
+8,31476,agent-1,Get(Lettuce),0
+9,37014,agent-1,Get(Lettuce),0
+10,42114,agent-1,Get(Plate),0
+11,66078,agent-1,"Merge(Lettuce, Plate)",5
+12,71616,agent-4,Get(Tomato),0
+13,90042,agent-1,"Merge(Lettuce, Plate)",5
+14,95580,agent-1,Chop(Lettuce),0
+15,101118,agent-1,Chop(Lettuce),0
+16,106656,agent-1,Get(Lettuce),0
+17,117194,agent-1,Chop(Tomato),2
+18,119544,agent-2,"Merge(Lettuce, Plate)",5
+19,125194,agent-1,Get(Bun),2
+20,149158,agent-1,"Merge(Lettuce, Plate)",5
+21,149350,agent-3,"Merge(Bun, Lettuce-Plate)",10
+22,154696,agent-1,Chop(Lettuce),0
+23,158096,agent-4,Deliver(Bun-Lettuce-Plate),47
+24,159796,agent-1,Get(Plate),0
+25,178660,agent-2,"Merge(Lettuce, Plate)",5
+26,183760,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+27,184198,agent-3,Get(Tomato),0
+28,189298,agent-1,Get(Tomato),0
+29,194836,agent-1,Get(Tomato),0
+30,199836,agent-3,Chop(Tomato),2
+31,200374,agent-1,Get(Lettuce),0
+32,205912,agent-1,Get(Meat),0
+33,216450,agent-1,Chop(Tomato),2
+34,226988,agent-1,Chop(Tomato),2
+35,250952,agent-2,"Merge(Tomato, Lettuce-Plate)",10
+36,250952,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+37,256490,agent-1,Chop(Lettuce),0
+38,270490,agent-1,Grill(Meat),4
+39,280454,agent-2,"Merge(Lettuce, Plate)",5
+40,294454,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+41,299992,agent-1,Get(Meat),0
+42,305530,agent-1,Get(Meat),0
+43,313992,agent-3,Grill(Meat),4
+44,329494,agent-1,"Merge(Meat, Lettuce-Plate-Tomato)",20
+45,335032,agent-1,Get(Tomato),0
+46,337494,agent-2,Get(Bun),2
+47,340570,agent-1,Get(Meat),0
+48,354570,agent-1,Grill(Meat),4
+49,378534,agent-1,"Merge(Meat, Lettuce-Plate-Tomato)",20
+50,389072,agent-1,Chop(Tomato),2
+51,413036,agent-3,"Merge(Tomato, Lettuce-Plate)",10
+52,413228,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+53,421974,agent-3,Deliver(Bun-Lettuce-Meat-Plate-Tomato),84.15
+54,427228,agent-1,Grill(Meat),4
+55,432328,agent-1,Get(Plate),0
+56,440328,agent-2,Get(Bun),2
+57,451192,agent-4,"Merge(Meat, Lettuce-Plate-Tomato)",20
+58,456292,agent-1,"Merge(Meat, Lettuce-Plate-Tomato)",20
+59,464292,agent-4,Get(Bun),2
+60,464292,agent-1,Get(Bun),2
+61,469830,agent-1,Get(Meat),0
+62,493986,agent-1,"Merge(Bun, Plate)",10
+63,501986,agent-1,Get(Bun),2
+64,526142,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+65,534888,agent-4,Deliver(Bun-Lettuce-Meat-Plate-Tomato),153
+66,550298,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+67,564298,agent-1,Grill(Meat),4
+68,573044,agent-1,Deliver(Bun-Plate),32
+69,588262,agent-4,"Merge(Meat, Lettuce-Plate-Tomato)",20
+70,597200,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+71,605946,agent-1,Deliver(Bun-Lettuce-Meat-Plate-Tomato),107.1
+72,613946,agent-1,Get(Bun),2
+73,622692,agent-1,Deliver(Bun-Lettuce-Meat-Plate-Tomato),153
+74,646848,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+75,655594,agent-1,Deliver(Bun-Lettuce-Meat-Plate-Tomato),153
+76,670100,agent-1,Get(Plate),0
+77,678100,agent-2,Get(Bun),2
+78,702256,agent-1,"Merge(Bun, Plate)",10
+79,711002,agent-1,Deliver(Bun-Plate),0
+80,769100,agent-1,Get(Plate),0
+81,774638,agent-1,Get(Lettuce),0
+82,780176,agent-1,Chop(Lettuce),0
+83,804140,agent-1,"Merge(Lettuce, Plate)",5
+84,812140,agent-2,Get(Bun),2
+85,836296,agent-1,"Merge(Bun, Lettuce-Plate)",10
+86,845042,agent-3,Deliver(Bun-Lettuce-Plate),0
+87,846100,agent-1,Get(Plate),0
+88,854100,agent-1,Get(Bun),2
+89,878256,agent-1,"Merge(Bun, Plate)",10
+90,887002,agent-1,Deliver(Bun-Plate),0
