@@ -2,7 +2,9 @@
 from misc.game.game import Game
 from misc.game.utils import *
 from utils.core import *
-from utils.interact import interact
+from utils.interact import interact, concept_interact
+
+from recipe_planner.utils import Get, Chop, Merge, Deliver,Grill
 
 # helpers
 import pygame
@@ -53,19 +55,32 @@ class GamePlay(Game):
 
             # Control current agent
             x, y = self.current_agent.location
+           
             if event.key in KeyToTuple.keys():
                 action = KeyToTuple[event.key]
                 self.current_agent.action = action
-                interact(self.current_agent, self.world, play=True)
+                action = None
+                if(len(burger)> 0):
+                    action= burger.pop(0)
+                    self.current_agent.action = action
+                    concept_interact(self.current_agent, self.world, action )
 
     def on_execute(self):
         if self.on_init() == False:
             self._running = False
-
         while self._running:
             for event in pygame.event.get():
                 self.on_event(event)
             self.on_render()
         self.on_cleanup()
 
+
+bunLettuceTomato = [Get('Lettuce'),Chop('Lettuce'),Merge('Lettuce','Plate'),Get('Tomato'),Chop('Tomato'),
+        Merge('Tomato','Lettuce-Plate'),Get('Bun'),Merge('Bun','Lettuce-Plate-Tomato'), Deliver('Bun-Lettuce-Plate-Tomato')]
+
+burger = [Get('Lettuce'),Chop('Lettuce'),Merge('Lettuce','Plate'),
+          Get('Tomato'),Chop('Tomato'),Merge('Tomato','Lettuce-Plate'),
+          Get('Meat'), Grill('Meat'),Merge('Meat','Lettuce-Plate-Tomato'),
+          Get('Bun'), Merge('Bun','Lettuce-Meat-Plate-Tomato'), 
+          Deliver('Bun-Lettuce-Meat-Plate-Tomato')]
 

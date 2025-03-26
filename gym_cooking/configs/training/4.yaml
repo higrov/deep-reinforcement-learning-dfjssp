@@ -7,7 +7,7 @@ notes: Training 4x3 layout with model trained on 4x3-FINAL
 tags: 4x3, FINAL # comma separated list of tags for this run
 
 # Environment:
-level: open-divider_salad, partial-divider_salad, block-divider_salad, full-divider_salad, ring-divider_salad
+level: open-divider_salad
 num-agents: 4
 num-orders: 3
 max-num-timesteps: 200 # quit after this many timesteps
@@ -25,17 +25,6 @@ evaluate: false
 sweep: false
 
 # Agents:
-# Model type for agent (seac, ppo, bd, up, dc, fb, or greedy) must match num-agents
-model1: mappo
-model2: mappo
-model3: mappo
-model4: mappo
-model1-path: agents-3/orders-3/model1-mappo_model2-mappo_model3-mappo/MAPPO-3x3-FINAL-1675253783/mappo_10000000.tar.xz
-#Model files -- to load pretrained models (only works for rl and --evaluate mode)
-#model1-path: # path to model file
-#model2-path: 
-#model3-path: 
-#model4-path:
 
 # Training Parameters:
 num-processes: 100 # number of parallel environments
@@ -71,27 +60,6 @@ use-gae: true
 gamma: 0.99
 gae-lambda: 0.95
 
-# HyperParameters - PPO:
-#batch-size: 32
-#lr: 0.001
-#gamma: 0.99
-#gae-lambda: 0.95
-#clip-range: 0.05
-#entropy-coef: 0.1
-#value-loss-coef: 0.1
-#max-grad-norm: 0.5
-
-
-# HyperParameters - SEAC (Shared Experience Actor Critic):
-#lr: 0.0009
-#adam-eps: 0.001
-#use_gae: false
-#gamma: 0.95
-#gae-lambda: 0.95
-#entropy-coef: 0.05
-#value-loss_coef: 0.5
-seac-coef: 1.0
-#max-grad-norm: 0.5
 
 # HyperParameters - Bayesian Delegation:
 #### Delegation Planner

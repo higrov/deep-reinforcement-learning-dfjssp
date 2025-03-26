@@ -2,18 +2,13 @@
 from asyncio.log import logger
 import os
 import shutil
-from recipe_planner.stripsworld import STRIPSWorld
-from rl.seac import a2c
-from rl.mappo.mappo_evaluator import MAPPOEvaluator
-from recipe_planner.utils import *
-from recipe_planner import Recipe
-import stable_baselines3 as sbln3
 
-# Delegation planning
-from delegation_planner.bayesian_delegator import BayesianDelegator
+from recipe_planner.utils import *
+
+from recipe_planner import Recipe, SimpleBun, BunLettuce, Burger, BunLettuceTomato
+
 
 # Navigation planner
-from navigation_planner.planners.e2e_brtdp import E2E_BRTDP
 import navigation_planner.utils as nav_utils
 
 # Other core modules
@@ -25,107 +20,59 @@ import copy
 from termcolor import colored as color
 from collections import namedtuple
 
+import simpy
+
 AgentRepr = namedtuple("AgentRepr", "name location holding")
 
 # Colors for agents.
 COLORS = ["purple", "green", "blue", "yellow", "magenta"]
-
-
-class RealAgent:
+# Possible actions_performed by Agents
+class RealMachine:
     """Real Agent object that performs task inference and plans."""
-
+    possible_operations = {Get: 11, Merge: 50, Chop: 40, Grill:30, Deliver: 30}
     def __init__(
         self,
-        arglist,
         name,
         id_color,
-        recipes: list[Recipe],
-        obs_space,
-        action_space,
-        model_type,
-        model_path,
-        env,
+        jobshop_env,
+        capacity
     ):
-        self.arglist = arglist
+
         self.name = name
         self.color = id_color
-        self.recipes = recipes
         self.holding: Object = None
 
-        # Bayesian Delegation.
-        self.reset_subtasks()
-        self.new_subtask = None
-        self.new_subtask_agent_names = []
-        self.incomplete_subtasks = []
-        self.signal_reset_delegator = False
-        self.is_subtask_complete = lambda w: False
-        self.beta = arglist.beta
-        self.none_action_prob = 0.5
+        # JobShop Machine 
 
-        # Agent Model
-        self.model_type, self.model_path = model_type, model_path
-        if self.model_type == "up":
-            self.priors = "uniform"
-        else:
-            self.priors = "spatial"
+        self.jobshop_env = jobshop_env
+        self.capacity = capacity
+        self.queue = simpy.Resource(self.jobshop_env, capacity=self.capacity)
 
-        # Navigation planner.
-        if self.model_type == "mappo":
-            self.planner: MAPPOEvaluator = MAPPOEvaluator(env=env, device=arglist.device, idx=int(self.name[-1]) - 1, config=arglist)
-        elif self.model_type == "seac":
-            self.planner = a2c.A2C(
-                self.name[-1],
-                obs_space,
-                action_space,
-                arglist.max_num_timesteps,
-                arglist.num_processes,
-                arglist.device,
-            )
-        elif self.model_type == "ppo":
-            self.planner = sbln3.PPO("MlpPolicy", env, verbose=0, device=arglist.device)
-        else:
-            self.planner = E2E_BRTDP(
-                alpha=arglist.alpha,
-                tau=arglist.tau,
-                cap=arglist.cap,
-                main_cap=arglist.main_cap,
-            )
+        self.last_operation_executed = None
+        self.last_operation_executed_at = -1
 
-        if self.model_type in ["ppo", "seac", "mappo"] and self.model_path is not None:
-            if not self.model_path or not os.path.exists(
-                f"./models/{self.model_path}"
-            ):
-                raise ValueError(
-                    f"Model {self.model_path} does not exist at location './models'. Please fix args or config."
-                )
-            elif self.model_type == "seac":
-                shutil.unpack_archive(
-                    f"./models/{self.model_path}", "./models", "xztar"
-                )
-                self.planner.restore(
-                    f"./models/{self.model_path.replace('.tar.xz', '')}"
-                )
-                shutil.rmtree(f"./models/{self.model_path.replace('.tar.xz', '')}")
-            elif self.model_type == "ppo":
-                self.planner.load(f"./models/{self.model_path}")
-            elif self.model_type == "mappo":
-                self.planner.restore(f"./models/{self.model_path}")
 
     def __str__(self):
         return color(self.name[-1], 'red' if 'purple' == self.color else self.color)
 
     def __copy__(self):
-        a = RealAgent(
+        a = RealMachine(
             arglist=self.arglist,
             name=self.name,
             id_color=self.color,
-            recipes=self.recipes,
-            model_path=self.model_path,
+            capacity=self.capacity,
+            jobshop_env=self.jobshop_env
+
         )
-        a.subtask = self.subtask
-        a.new_subtask = self.new_subtask
-        a.subtask_agent_names = self.subtask_agent_names
-        a.new_subtask_agent_names = self.new_subtask_agent_names
+        # a.subtask = self.subtask
+        # a.new_subtask = self.new_subtask
+        # a.subtask_agent_names = self.subtask_agent_names
+        # a.new_subtask_agent_names = self.new_subtask_agent_names
+        a.possible_operations = self.possible_operations 
+
+        a.last_operation_executed = None
+        a.last_operation_executed_at = None
+
         a.__dict__ = self.__dict__.copy()
         if self.holding is not None:
             a.holding = copy.copy(self.holding)
@@ -168,28 +115,22 @@ class RealAgent:
 
     def get_subtasks(self, order, world):
         """Return different subtask permutations for recipes."""
-        self.sw = STRIPSWorld(world)
-        # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions.
-        subtasks = self.sw.get_subtasks(recipe__=order.recipe, max_path_length=self.arglist.max_num_subtasks
-        )
-        all_subtasks = [subtask for path in subtasks for subtask in path]
+        # self.sw = STRIPSWorld(world)
+        # # [path for recipe 1, path for recipe 2, ...] where each path is a list of actions.
+        # subtasks = self.sw.get_subtasks(recipe__=order.recipe, max_path_length=self.arglist.max_num_subtasks
+        # )
+        # all_subtasks = [subtask for path in subtasks for subtask in path]
 
-        # Uncomment below to view graph for recipe path i
-        # i = 0
-        # pg = recipe_utils.make_predicate_graph(self.sw.initial, recipe_paths[i])
-        # ag = recipe_utils.make_action_graph(self.sw.initial, recipe_paths[i])
-        return all_subtasks
+        # # Uncomment below to view graph for recipe path i
+        # # i = 0
+        # # pg = recipe_utils.make_predicate_graph(self.sw.initial, recipe_paths[i])
+        # # ag = recipe_utils.make_action_graph(self.sw.initial, recipe_paths[i])
+        # return all_subtasks
+        return [task for task in order]
 
     def setup_subtasks(self, obs):
         """Initializing subtasks and subtask allocator, Bayesian Delegation."""
         self.incomplete_subtasks = self.get_subtasks(order=obs.get_remaining_orders()[0], world=obs.world)
-        self.delegator = BayesianDelegator(
-                agent_name=self.name,
-                all_agent_names=obs.get_agent_names(),
-                model_type=self.model_type,
-                planner=self.planner,
-                none_action_probs=self.none_action_prob,
-            )
 
     def reset_subtasks(self):
         """Reset subtasks---relevant for Bayesian Delegation."""
@@ -239,6 +180,7 @@ class RealAgent:
                     actions_tm1=env.agent_actions,
                     beta=self.beta,
                 )
+    
     def all_done(self):
         """Return whether this agent is all done.
         An agent is done if all Deliver subtasks are completed."""
@@ -369,20 +311,76 @@ class RealAgent:
             )
 
 
+    def process_job(self, job):
+        operation = job.get_next_operation()
+        start_time = self.jobshop_env.now
+        print(f"{start_time:.2f}: Job {job.full_name}, operation {str(operation)} started on {self.name}")
+        processing_time = self.get_processing_time(operation)
+        completed_time = start_time + processing_time
+        yield self.jobshop_env.timeout(processing_time)  # Simulate processing time
+        print(f"{completed_time:.2f}: Job {job}, operation {str(operation)} completed on {self.name}")
+        self.last_operation_executed = operation
+        self.last_operation_executed_at = completed_time
+        job.add_completed_tasks(operation,self.name,completed_time)
+
+    def get_possible_operations(self): 
+        return self.possible_operations
+    
+    def set_last_operation_executed(self,val): self.last_operation_executed = val
+
+    def set_last_operation_performed_at(self, val): self.last_operation_executed_at = val
+
+    def get_processing_time(self, action): 
+        processing_time = 24000
+
+        if(action.__class__ == Get):
+            if(action.args[0] == 'Plate'):
+                processing_time += 1100
+            if action.args[0] == 'Tomato' or action.args[0] == 'Meat' or action.args[0] == 'Lettuce':
+                processing_time += 1538
+            if(action.args[0] == 'Bun'):
+                processing_time += 4000
+
+
+        elif(action.__class__ == Chop):
+            processing_time += 1538
+            if action.args[0] == 'Tomato':
+                 processing_time += 5000
+
+        elif (action.__class__ == Merge):
+            processing_time += 2656
+            if action.args[0] == 'Tomato' or action.args[0] == 'Meat' or action.args[0] == 'Lettuce':
+                processing_time += 17308
+            if(action.args[0] == 'Bun'):
+                processing_time += 17500
+        
+        elif (action.__class__ == Grill):
+            processing_time += 10000
+        
+        elif (action.__class__ == Deliver):
+            processing_time += 4746
+            
+        return processing_time
+
+
 class SimAgent:
     """Simulation agent used in the environment object."""
-
+    possible_operations = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
     def __init__(self, name, id_color, location):
         self.name = name
         self.color = id_color
         self.location = location
         self.spawn_location = location
         self.holding = None
-        self.action = (0, 0)
+        self.action = None
+
+        self.last_action_performed = None
+        self.last_action_performed_at = None
 
     def reset(self):
         self.location = self.spawn_location
-        self.action = (0, 0)
+        self.action = None
+        self.possible_tasks = self.possible_operations
         if self.holding:
             self.holding.is_held = False
             self.holding = None
@@ -428,3 +426,50 @@ class SimAgent:
         self.location = new_location
         if self.holding is not None:
             self.holding.location = new_location
+    
+    def get_possible_tasks(self): 
+        return self.possible_tasks
+    
+    def set_last_operation_executed(self,val: str): self.last_operation_executed = val
+
+    def set_last_action_performed_at(self, val: int): self.last_action_performed_at = val
+
+    def get_processing_time(self, action): 
+        processing_time = 0
+        #return processing_time
+        if(action.__class__ == Get):
+            if(action.args[0] == 'Bun'):
+                processing_time += 17660
+
+
+        elif(action.__class__ == Chop):
+            processing_time += 4194
+            if action.args[0] == 'Tomato':
+                processing_time += 10000
+            if action.args[0] == 'Lettuce':
+                processing_time += 5000
+
+        elif (action.__class__ == Merge):
+            processing_time = 17308
+            if action.args[0] == 'Tomato':
+                processing_time += 17308
+            if action.args[0] == 'Meat':
+                processing_time += 17308
+            if(action.args[0] == 'Bun'):
+                processing_time += 35348
+        
+        elif (action.__class__ == Grill):
+                processing_time += 15000
+        
+        elif (action.__class__ == Deliver):
+            processing_time = 10
+            if(action.args[0] == "Bun-Plate" ):
+                processing_time = 10
+            if(action.args[0] == "Bun-Lettuce-Plate" ):
+                processing_time = 10
+            if(action.args[0]== 'Bun-Lettuce-Plate-Tomato' ):
+                processing_time += 50
+            
+            if(action.args[0] == 'Bun-Lettuce-Meat-Plate-Tomato' ):
+                processing_time= 100
+        return processing_time

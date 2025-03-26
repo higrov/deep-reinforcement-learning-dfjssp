@@ -1,0 +1,10 @@
+,Time,Machine,Task,Points
+0,25100,agent-1,Get(Plate),0
+1,50200,agent-3,Get(Plate),0
+2,78200,agent-1,Get(Bun),2
+3,103738,agent-1,Get(Lettuce),0
+4,122356,agent-2,"Merge(Bun, Plate)",10
+5,128838,agent-1,Get(Plate),0
+6,151102,agent-3,Deliver(Bun-Plate),32
+7,154376,agent-1,Chop(Lettuce),0
+8,156838,agent-2,Get(Bun),2

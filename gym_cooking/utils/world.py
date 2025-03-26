@@ -8,7 +8,7 @@ from utils.utils import timeit
 
 import recipe_planner.utils as recipe
 
-from navigation_planner.utils import manhattan_dist
+# from navigation_planner.utils import manhattan_dist
 from utils.core import Floor, Food, Object, GridSquare, Counter, Order, Plate, RepToClass
 
 

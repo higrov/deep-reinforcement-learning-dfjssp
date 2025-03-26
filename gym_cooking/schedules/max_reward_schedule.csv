@@ -1,0 +1,62 @@
+,Time,Machine,Task,Points
+0,25100,agent-1,Get(Plate),0
+1,50200,agent-1,Get(Plate),0
+2,78200,agent-1,Get(Bun),2
+3,103738,agent-1,Get(Lettuce),0
+4,122356,agent-2,"Merge(Bun, Plate)",10
+5,128838,agent-1,Get(Plate),0
+6,151102,agent-3,Deliver(Bun-Plate),32
+7,154376,agent-1,Chop(Lettuce),0
+8,156838,agent-2,Get(Bun),2
+9,200802,agent-2,"Merge(Lettuce, Plate)",5
+10,200994,agent-1,"Merge(Bun, Plate)",10
+11,226094,agent-1,Get(Plate),0
+12,229740,agent-3,Deliver(Bun-Plate),32
+13,251632,agent-1,Get(Tomato),0
+14,254094,agent-2,Get(Bun),2
+15,282170,agent-1,Chop(Tomato),2
+16,326326,agent-1,"Merge(Bun, Plate)",10
+17,351426,agent-1,Get(Plate),0
+18,355072,agent-3,Deliver(Bun-Plate),32
+19,376964,agent-2,Get(Lettuce),0
+20,395390,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+21,420490,agent-1,Get(Plate),0
+22,446028,agent-1,Chop(Lettuce),0
+23,448490,agent-2,Get(Bun),2
+24,471566,agent-1,Get(Meat),0
+25,496666,agent-1,Get(Plate),0
+26,505566,agent-3,Grill(Meat),4
+27,522204,agent-2,Get(Lettuce),0
+28,540630,agent-1,"Merge(Lettuce, Plate)",5
+29,549530,agent-4,"Merge(Meat, Lettuce-Plate-Tomato)",20
+30,566168,agent-3,Get(Tomato),0
+31,584786,agent-1,"Merge(Bun, Plate)",10
+32,594168,agent-3,Get(Bun),2
+33,609886,agent-1,Get(Plate),0
+34,635424,agent-2,Get(Lettuce),0
+35,635424,agent-1,Chop(Lettuce),0
+36,660962,agent-3,Chop(Lettuce),0
+37,665962,agent-1,Chop(Tomato),2
+38,694708,agent-1,Deliver(Bun-Plate),17.6
+39,704926,agent-3,"Merge(Lettuce, Plate)",5
+40,719808,agent-1,Get(Plate),0
+41,730464,agent-4,Get(Tomato),0
+42,763964,agent-1,"Merge(Bun, Lettuce-Meat-Plate-Tomato)",10
+43,789064,agent-1,Get(Plate),0
+44,833028,agent-1,"Merge(Lettuce, Plate)",5
+45,876992,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+46,902530,agent-1,Get(Lettuce),0
+47,904992,agent-4,Get(Bun),2
+48,933068,agent-1,Chop(Tomato),2
+49,949148,agent-2,"Merge(Bun, Lettuce-Plate-Tomato)",10
+50,961814,agent-1,Deliver(Bun-Lettuce-Meat-Plate-Tomato),153
+51,987352,agent-1,Get(Lettuce),0
+52,1015352,agent-1,Get(Bun),2
+53,1040890,agent-1,Chop(Lettuce),0
+54,1059508,agent-4,"Merge(Bun, Lettuce-Plate)",10
+55,1084854,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+56,1112854,agent-2,Get(Bun),2
+57,1113600,agent-1,Deliver(Bun-Lettuce-Plate-Tomato),19.75
+58,1139138,agent-1,Chop(Lettuce),0
+59,1157010,agent-4,"Merge(Bun, Lettuce-Plate-Tomato)",10
+60,1183102,agent-1,"Merge(Lettuce, Plate)",5

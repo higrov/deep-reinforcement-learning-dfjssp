@@ -1,7 +1,7 @@
 # recipe planning
 import math
 #import recipe_planner
-from recipe_planner import Recipe
+from recipe_planner import Recipe, SimpleBun, BunLettuce, Burger, BunLettuceTomato
 import recipe_planner.utils as recipe
 import time
 
@@ -21,13 +21,16 @@ OrderRepr = namedtuple("OrderRepr", "name recipe_name delivered queued_at delive
 
 class Rep:
     FLOOR = " "
+    BUN = "b"
     COUNTER = "-"
     CUTBOARD = "/"
+    CHEESE = "c"
     DELIVERY = "*"
     TOMATO = "t"
     LETTUCE = "l"
     ONION = "o"
     PLATE = "p"
+    MEAT = "m"
     ORDER = "O"
     GRILL = "g"
 
@@ -83,23 +86,134 @@ class Floor(GridSquare):
 
 
 class Order(GridSquare):
-    def __init__(self, recipe: Recipe, location, t):
+    def __init__(self, recipe: Recipe, location, queued_at, delivery_window):
         GridSquare.__init__(self, recipe.name, location)
         self.recipe = recipe
         self.rep = recipe.rep  # instead of Rep.ORDER
         self.full_name = recipe.delivery_name
-        self.queued_at = t
+        self.tasks = recipe.actions
+        self.completed_tasks = []
+        self.completed_task_machine = []
+        self.queued_at = queued_at
         self.delivered_at = None
+        self.delivery_window = delivery_window
+        self.earliness_tardiness_weights = (0.9,0.4)
+        self.last_task_completion_timestamp = -1
+        self.reward = 0
+        self.last_task_reward = 0
+
         self.delivered = False
         self.duration = -1
         self.dynamic = False
         self.collidable = False
+        self.completed = False
 
-    def reset(self, t):
+    def reset(self, t, delivery_window):
         self.queued_at = t
         self.delievered_at = None
         self.duration = -1
         self.delivered = False
+        self.delivery_window = delivery_window
+        self.completed_tasks = []
+        self.reward = 0
+
+    def get_tasks(self): return self.tasks
+    
+    def set_completed(self, val: bool): self.completed = val
+
+    def get_completed(self): return self.completed 
+
+    def get_delivery_window(self): return self.delivery_window
+
+    def add_completed_tasks(self, task, machine, timestamp): 
+        self.completed_tasks.append(task)
+        self.set_last_task_completion_timestamp(timestamp)
+        self.calculate_points(task)
+        self.completed_task_machine.append((task,machine))
+       
+        if(self.completed_tasks == self.tasks):
+            self.set_completed(True)
+
+    def get_completed_tasks(self) : return self.completed_tasks
+
+    def get_last_task_completion_timestamp(self): return self.last_task_completion_timestamp
+
+    def set_last_task_completion_timestamp(self, val): self.last_task_completion_timestamp = val
+
+    def get_next_operation(self):
+        uncompleted_tasks = [task for task in self.tasks if task not in self.completed_tasks]
+        return uncompleted_tasks[0]
+
+    def get_queued_time(self): return self.queued_at
+
+    def calculate_points(self,task):
+        self.last_task_reward = 0
+        if(task.__class__ == recipe.Get):
+            self.reward += 0
+            self.last_task_reward = 0
+            if task.args[0] == 'Bun':
+                self.last_task_reward += 2
+                self.reward += 2
+
+        elif(task.__class__ == recipe.Chop):
+            if task.args[0] == 'Tomato':
+                self.last_task_reward += 2
+                self.reward += 2
+        
+        elif (task.__class__ == recipe.Grill):
+            self.last_task_reward = 4
+            self.reward += 4
+
+        elif (task.__class__ == recipe.Merge):
+            self.reward += 5
+            self.last_task_reward += 5
+            if task.args[0] == 'Tomato':
+                self.last_task_reward += 5
+                self.reward += 5 
+            if task.args[0] == 'Meat':
+                self.last_task_reward += 15
+                self.reward += 15
+            if task.args[0] == 'Bun':
+                self.last_task_reward += 5
+                self.reward += 5
+        
+        elif (task.__class__ == recipe.Deliver):
+            if(self.recipe.__class__ == SimpleBun ):
+                self.reward += 20
+            if(self.recipe.__class__ == BunLettuce ):
+                self.reward += 30
+            if(self.recipe.__class__ == BunLettuceTomato ):
+                self.reward += 50
+            if(self.recipe.__class__ == Burger ):
+                self.reward += 100
+            
+            self.reward = self.calculate_net_reward()
+            self.last_task_reward = self.reward
+
+    def calculate_net_reward(self):
+
+        ts = self.delivery_window[0]
+        te = self.delivery_window[1]
+        time_interval = (te -ts) / 5 
+        net_reward = 0
+
+        if self.last_task_completion_timestamp < ts: 
+            net_reward = 0
+        elif ts <= self.last_task_completion_timestamp <= te:
+            net_reward = self.reward
+        elif te < self.last_task_completion_timestamp <= te +time_interval:
+            net_reward = 0.85* self.reward
+        elif (te +time_interval) < self.last_task_completion_timestamp <= (te +(2*time_interval)):    
+            net_reward = 0.7 * self.reward
+        elif (te + (2* time_interval)) < self.last_task_completion_timestamp <= (te +(3*time_interval)):
+            net_reward = 0.55 * self.reward
+        elif (te + (3* time_interval)) < self.last_task_completion_timestamp <= (te +(4*time_interval)): 
+            net_reward = 0.4 * self.reward
+        else:
+            net_reward = 0.25* self.reward
+        
+        return net_reward
+    
 
     def __eq__(self, other):
         return (
@@ -108,10 +222,11 @@ class Order(GridSquare):
             and self.rep == other.rep
             and self.delivered == other.delivered
             and self.queued_at == other.queued_at
-            and self.delivered_at == other.delivered_at)
+            and self.delivered_at == other.delivered_at
+            and self.delivery_window == other.delivery_window)
 
     def __hash__(self):
-        return hash((self.full_name, self.delivered, self.queued_at, self.duration))
+        return hash((self.full_name, self.delivered, self.queued_at, self.duration, self.delivery_window))
 
     def get_repr(self):
         return OrderRepr(self.name, self.full_name, self.delivered, self.queued_at, self.delivered_at)
@@ -289,10 +404,21 @@ class Object:
         if len(self.contents) > 1:
             return False
         return self.contents[0].needs_chopped()
+    
+    def needs_grilled(self):
+        if len(self.contents) > 1:
+            return False
+        return self.contents[0].needs_grilled()
 
     def is_chopped(self):
         for c in self.contents:
             if isinstance(c, Plate) or c.get_state() != "Chopped":
+                return False
+        return True
+    
+    def is_grilled(self):
+        for c in self.contents:
+            if isinstance(c, Plate) or c.get_state() != "Grilled":
                 return False
         return True
 
@@ -301,6 +427,13 @@ class Object:
         assert self.needs_chopped()
         self.contents[0].update_state()
         assert not (self.needs_chopped())
+        self.update_names()
+
+    def grill(self):
+        assert len(self.contents) == 1
+        assert self.needs_grilled()
+        self.contents[0].update_state()
+        assert not (self.needs_grilled())
         self.update_names()
 
     def merge(self, obj):
@@ -346,6 +479,8 @@ class Object:
 def mergeable(obj1, obj2):
     # query whether two objects are mergeable
     contents = obj1.contents + obj2.contents
+    if(obj1.name == "FreshBun" and obj2.name == "FreshBun" ):
+        return False
     # check that there is at most one plate
     try:
         contents.remove(Plate())
@@ -369,10 +504,12 @@ def mergeable(obj1, obj2):
 class FoodState:
     FRESH = globals()["recipe"].__dict__["Fresh"]
     CHOPPED = globals()["recipe"].__dict__["Chopped"]
+    GRILLED = globals()["recipe"].__dict__["Grilled"]
 
 class FoodSequence:
     FRESH = [FoodState.FRESH]
     FRESH_CHOPPED = [FoodState.FRESH, FoodState.CHOPPED]
+    FRESH_GRILLED = [FoodState.FRESH, FoodState.GRILLED]
 
 
 # -----------------------------------------------------------
@@ -413,6 +550,11 @@ class Food:
         return (
             self.state_seq[(self.state_index + 1) % len(self.state_seq)]
             == FoodState.CHOPPED
+        )
+    def needs_grilled(self):
+        return (
+            self.state_seq[(self.state_index + 1) % len(self.state_seq)]
+            == FoodState.GRILLED
         )
 
     def done(self):
@@ -475,6 +617,47 @@ class Onion(Food):
         return Food.__hash__(self)
 
 
+class Bun(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH
+        self.rep = "b"
+        self.name = "Bun"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
+
+class Cheese(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH_CHOPPED
+        self.rep = "c"
+        self.name = "Cheese"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
+    
+class Meat(Food):
+    def __init__(self, state_index=0):
+        self.state_index = state_index  # index in food's state sequence
+        self.state_seq = FoodSequence.FRESH_GRILLED
+        self.rep = "m"
+        self.name = "Meat"
+        Food.__init__(self)
+
+    def __eq__(self, other):
+        return Food.__eq__(self, other)
+
+    def __hash__(self):
+        return Food.__hash__(self)
 # -----------------------------------------------------------
 
 
@@ -512,6 +695,9 @@ RepToClass = {
     Rep.TOMATO: globals()["Tomato"],
     Rep.LETTUCE: globals()["Lettuce"],
     Rep.ONION: globals()["Onion"],
+    Rep.BUN: globals()["Bun"],
+    Rep.CHEESE: globals()["Cheese"],
+    Rep.MEAT: globals()["Meat"],
     Rep.PLATE: globals()["Plate"],
     Rep.ORDER: globals()["Order"],
     Rep.GRILL : globals()["Grill"]

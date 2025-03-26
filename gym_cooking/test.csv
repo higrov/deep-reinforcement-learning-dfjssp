@@ -1,0 +1,45 @@
+,Time,Machine,Task,Points
+0,30,agent-1,Get(Tomato),0
+1,60,agent-1,Get(Lettuce),0
+2,70,agent-2,Chop(Tomato),2
+3,90,agent-1,Get(Lettuce),0
+4,110,agent-2,Chop(Lettuce),0
+5,120,agent-1,Get(Tomato),0
+6,150,agent-1,Get(Lettuce),0
+7,160,agent-3,"Merge(Lettuce, Plate)",5
+8,200,agent-1,"Merge(Tomato, Plate)",10
+9,240,agent-1,Chop(Lettuce),0
+10,280,agent-1,Chop(Tomato),2
+11,290,agent-2,"Merge(Lettuce, Plate)",5
+12,310,agent-1,Get(Lettuce),0
+13,320,agent-3,Get(Tomato),5
+14,350,agent-1,Chop(Lettuce),0
+15,380,agent-1,Get(Tomato),5
+16,410,agent-1,Deliver(Plate-Tomato),40
+17,460,agent-1,"Merge(Tomato, Plate)",10
+18,490,agent-2,Deliver(Plate-Tomato),28.0
+19,500,agent-1,Chop(Lettuce),0
+20,540,agent-1,Chop(Tomato),2
+21,590,agent-1,"Merge(Lettuce, Plate)",5
+22,620,agent-1,Get(Lettuce),0
+23,660,agent-1,Chop(Tomato),2
+24,710,agent-1,"Merge(Lettuce, Plate)",5
+25,740,agent-2,Get(Tomato),5
+26,760,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+27,790,agent-4,Get(Onion),10
+28,790,agent-1,Get(Lettuce),0
+29,820,agent-1,Get(Tomato),5
+30,830,agent-3,Chop(Onion),4
+31,860,agent-1,Chop(Lettuce),0
+32,910,agent-1,"Merge(Tomato, Lettuce-Plate)",10
+33,940,agent-4,Deliver(Lettuce-Plate-Tomato),60
+34,950,agent-1,Chop(Tomato),2
+35,990,agent-1,Chop(Lettuce),0
+36,1000,agent-3,"Merge(Tomato, Lettuce-Plate)",10
+37,1030,agent-1,Chop(Tomato),2
+38,1040,agent-2,"Merge(Lettuce, Plate)",5
+39,1070,agent-3,Deliver(Lettuce-Plate),6.25
+40,1080,agent-1,"Merge(Onion, Lettuce-Plate-Tomato)",20
+41,1110,agent-1,Get(Lettuce),0
+42,1160,agent-1,"Merge(Lettuce, Plate)",5
+43,1190,agent-1,Get(Lettuce),0
