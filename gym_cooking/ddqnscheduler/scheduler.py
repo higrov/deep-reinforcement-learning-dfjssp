@@ -20,9 +20,10 @@ class SchedulingAgent:  # one node agent
         self.model = DoubleDeepQNetwork(nb_input_params, nb_actions, train=train,  model_file=network_model_file)
         self.epsilon = EPSILON_MAX
         self.min_loss = 99999
-        self.memory = deque(maxlen=50000)
+        self.memory = deque(maxlen=4000)
         self.policy = SoftEpsilonGreedyPolicy(nb_total_operations,self.epsilon, nb_actions)
         self.prediction = np.zeros(nb_actions)
+        self.n_scheduling_actions = nb_actions 
 
     def reset(self):
         self._epsilon_decay_()

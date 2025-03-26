@@ -21,12 +21,12 @@ randomize: false
 
 # Mode:
 play: false
-train: true
-evaluate: false
+train: false
+evaluate: true
 test: false
 
 #schedule File 
-schedule_filename : max_reward_schedule
+schedule_filename : max_reward_schedule_test
 
 model_filename : ddqn_model.h5
 

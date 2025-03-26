@@ -17,7 +17,7 @@ class JobShop:
         # Define the job shop simulation environment
         self.env = simpy.Environment()
         self.processable_jobs= []
-        self.state = np.zeros(4) # Initial Production State [0,0,0,0]
+        self.state = np.zeros(scheduler.n_scheduling_actions) # Initial Production State [0,0,0,0]
         self.state_calculator = StateCalculator()
         self.uncompleted_jobs = []
         self.scheduler = scheduler

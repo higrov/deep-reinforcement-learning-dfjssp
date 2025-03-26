@@ -331,7 +331,7 @@ class RealMachine:
     def set_last_operation_performed_at(self, val): self.last_operation_executed_at = val
 
     def get_processing_time(self, action): 
-        processing_time = 4000
+        processing_time = 24000
 
         if(action.__class__ == Get):
             if(action.args[0] == 'Plate'):
