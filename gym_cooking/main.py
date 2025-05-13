@@ -1,7 +1,6 @@
 from asyncio.log import logger
 import logging
 
-import wandb
 from envs.overcooked_environment import OvercookedEnvironment
 
 from recipe_planner.recipe import *
@@ -15,12 +14,13 @@ from schedulingrules import *
 
 import utils.utils as utils
 import parsers as parsers
-import sweep as sweep
+
 
 import gymnasium as gym
 from gymnasium.envs.registration import register
 
 from envs.jobshop_env import JobShop
+from envs.jobshop_gym_env import JobShopEnv
 from schedule_generator import ScheduleGenerator
 import random
 from sklearn.model_selection import train_test_split
@@ -41,51 +41,6 @@ def define_arglist():
 def change_arglist(val):
     global global_arglist
     global_arglist = val
-
-
-def eval_loop(arglist):
-    """The main evaluation loop for running trials and experiments."""
-    logger.info("Initializing environment and agents.")
-    run_id = arglist.run_id
-
-    schedule_dataframe = pd.read_csv(f"./schedules/{arglist.schedule_filename}.csv", index_col=0)
-    group_schedule= schedule_dataframe.groupby('Time')
-    
-    arglist.run_id = f"{run_id}-{arglist.level}-{int(time.time())}"
-
-    NUM_TRIALS = arglist.num_processes
-    logger.info(f'Starting trials for level {arglist.level}')
-    for i in range(1, NUM_TRIALS + 1):
-
-        logger.info(f"Trial {i} of {NUM_TRIALS}")
-        logger.info(f"Preparing env")
-        
-        env : OvercookedEnvironment = gym.envs.make("overcookedEnv-v0", arglist=arglist)
-
-        utils.fix_seed(i)
-        env.seed(i)
-        obs = env.reset()
-                
-        logger.info(f"Preparing agents")
-        env.render()
-                #print(env.t)
-        i = 0
-        for group in list(group_schedule.groups):
-            action_dict = {}
-            agent_names = schedule_dataframe['Machine'].unique()
-            for i in agent_names:
-                action_dict[i] = None
-            
-            data = group_schedule.get_group(group)
-
-            for index, row in data.iterrows():
-                action_dict[row['Machine']] = (group, row['Task'],row['Points'])
-            i = group
-            obs, _, done, info = env.step(action_dict)
-            env.render()
-                
-
-    env.close()
 
 
 def getSchedule(train = True):
@@ -133,10 +88,11 @@ def test_loop(arglist):
         
         test_log = pd.concat([test_log,  pd.DataFrame([[i,np.sum(job_shop.rewards),job_shop.num_op_exceuted,job_shop.jobs_completed]], columns = test_log.columns)], axis=0, ignore_index=True)
 
-    #max_reward_schedule = max(schedules, key= lambda x: x[1])
+    max_reward_schedule = max(schedules, key= lambda x: x[1])
 
-    # max_reward_schedule[0].to_csv('./schedules/max_reward_schedule_test.csv')
-    # test_log.to_csv("./logs/test_log/" + "log-"+ "[" + str(len(listofglobalschedule)) + "]" + str(round(max_reward[1], 2)) + ".csv")
+    max_reward_schedule[0].to_csv('./schedules/max_reward_schedule_test.csv')
+    
+    test_log.to_csv("./logs/test_log/" + "log-"+ "[" + str(len(listofglobalschedule)) + "]" + str(int(max_reward)) + ".csv")
 
     return test_log
 
@@ -202,6 +158,108 @@ def train_loop(arglist):
     log.to_csv("./logs/train_log/" + "log-"+ "[" + str(MAX_EPISODE) + "]" + str(int(max_reward)) + ".csv")
     #test_log.to_csv("./logs/test_log/" + "test_log-"+ "[" + str(10000) + "]" + ".csv")
 
+def train_loop_test(arglist):
+    schedules = []
+    max_reward = -np.inf
+
+    # set up log DataFrames
+    log = pd.DataFrame(columns=[
+        'Episode', 'Score', 'Num Operations', 'Num Jobs Completed', 'Epsilon', 'Min Loss'
+    ])
+    test_log = pd.DataFrame(columns=[
+        'Episode', 'Score', 'Num Operations', 'Num Jobs Completed'
+    ])
+
+    # load training schedules
+    listofglobalschedule = getSchedule(train=True)
+
+    # count total operations once (for scheduler buffer sizing)
+    total_ops = sum(
+        len(order.recipe.actions)
+        for sched in listofglobalschedule
+        for order in sched
+    )
+
+    # initialize your DDQN agent
+    scheduler = Scheduler(
+        nb_total_operations=total_ops,
+        nb_input_params=4,       # Gym env will infer obs-dim dynamically
+        nb_actions=4,
+        train=True
+    )
+
+    j = 0
+    for episode in range(MAX_EPISODE):
+        # pick next schedule and sort by arrival
+        globalSchedule = sorted(listofglobalschedule[j], key=lambda o: o.queued_at)
+        j = (j + 1) % len(listofglobalschedule)
+
+        # create & reset Gym env
+        env = JobShopEnv(global_schedule=globalSchedule, num_machines=4)
+        state = env.reset()
+        done = False
+
+        total_reward = 0.0
+        num_ops = 0
+        num_jobs_done = 0
+
+        # run one episode
+        while not done:
+            env.env.process(env._generate_jobs())
+            # 1) agent picks an action
+            action = scheduler.choose_action(state)
+
+            # 2) step the env
+            next_state, reward, done, info = env.step(action)
+
+            # 3) store transition & accumulate reward
+            scheduler.observation(state, action, reward, next_state, done)
+            total_reward += reward
+
+            # update counters if you added these to your env
+            num_ops += info.get('num_ops', 1)
+            num_jobs_done = info.get('jobs_completed', num_jobs_done)
+
+            state = next_state
+
+        # after episode ends: train and log
+        min_loss = scheduler.replay()
+        if episode % UPDATE == 0:
+            scheduler.update_target_model()
+        scheduler.policy.reset()
+
+        # periodic evaluation
+        if episode and episode % 10000 == 0:
+            scheduler.model.save_model(f"./models/pretrained/DDQN/trained/{arglist.model_filename}")
+            tlog = test_loop(arglist)
+            test_log = pd.concat([test_log, tlog], ignore_index=True)
+            test_log.to_csv(f"./logs/test_log/test_log-[10000]_{episode}.csv")
+
+        # track best schedule
+        if total_reward > max_reward:
+            max_reward = total_reward
+            # if you’ve captured the schedule inside env, you can save it:
+            # schedules.append((env.schedule_df, total_reward))
+
+        # append to train log
+        log = pd.concat([
+            log,
+            pd.DataFrame([[
+                episode, total_reward, num_ops, num_jobs_done,
+                scheduler.policy.epsilon, min_loss
+            ]], columns=log.columns)
+        ], ignore_index=True)
+
+        if episode % 100 == 0:  # or whatever frequency
+            print(log.tail(1))
+
+        log.to_csv(f"./logs/train_log/log-[{MAX_EPISODE}].csv", index=False)
+
+    # final save
+    scheduler.model.save_model(f"./models/pretrained/DDQN/DDQN-[{MAX_EPISODE}]-{int(max_reward)}.h5")
+    # and if you captured a best schedule DataFrame:
+    # schedules[0][0].to_csv('./schedules/max_reward_schedule.csv')
+    log.to_csv(f"./logs/train_log/log-[{MAX_EPISODE}]-{int(max_reward)}.csv", index=False)
 
 if __name__ == "__main__":
     # initializes command line arguments, all missing arguments have default values
@@ -231,11 +289,9 @@ if __name__ == "__main__":
         game = GamePlay(env.filename, env.world, env.sim_agents)
         game.on_execute()
 
-    if arglist.train: 
-        train_loop(arglist)
-    
-    elif arglist.evaluate:
-        eval_loop(arglist)
+    elif arglist.train: 
+        train_loop_test(arglist)
+
     elif arglist.test:
         test_loop(arglist)
     

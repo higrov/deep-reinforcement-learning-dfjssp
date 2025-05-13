@@ -1,141 +1,131 @@
 import gymnasium as gym
 from gymnasium import spaces
 import numpy as np
-import pandas as pd
 import simpy
-from machine import Machine
-from utils.agent import RealMachine, COLORS
-from schedulingrules import *
 import copy
 from state_calculator import StateCalculator
-from ddqnscheduler.scheduler import SchedulingAgent as Scheduler
 from utils.core import Order
-
+from schedulingrules import scheduling_rules
+from utils.agent import RealMachine, COLORS
 
 class JobShopEnv(gym.Env):
+    """
+    OpenAI Gym environment wrapping a SimPy-based job-shop using predefined dispatching rules.
+
+    - Action space: select one of the dispatching rules (0–3)
+    - Observation: feature vector from StateCalculator
+    - Reward: sum of last task rewards per step
+    - Terminates when all jobs done or max_time reached
+    """
     metadata = {'render.modes': ['human']}
 
-    def __init__(self, scheduler: Scheduler, num_machines: int, globalSchedule, end_time=1200000):
-        super(JobShopEnv, self).__init__()
-
-        # Define the job shop simulation environment
-        self.env = simpy.Environment()
-        self.processable_jobs = []
-        self.state = np.zeros(4)  # Initial Production State [0,0,0,0]
+    def __init__(self, global_schedule: list[Order], num_machines: int,max_time: int = 1200000):
+        super().__init__()
+        self.global_schedule = global_schedule
+        self.num_machines = num_machines
         self.state_calculator = StateCalculator()
-        self.uncompleted_jobs = []
-        self.scheduler = scheduler
-        self.machines = []
-        self.num_op_exceuted = 0
-        self.schedule = pd.DataFrame(columns=['Time', 'Machine', 'Task', 'Points'])
-        self.jobs_completed = 0
-        self.deliverred_rewards = []
-        self.globalschedule = globalSchedule
-        self.end_time = end_time
+        self.max_time = max_time
 
-        # Create num machines
-        for i in range(num_machines):
-            newMachine = RealMachine(
-                jobshop_env=self.env,
-                name='agent-' + str(len(self.machines) + 1),
-                capacity=1,
-                id_color=COLORS[len(self.machines)]
-            )
-            self.machines.append(newMachine)
+        # Gym spaces
+        self.observation_space = None # to be defined in reset()
 
-        # Define action and observation space
-        # Example: action space is discrete with number of machines
-        self.action_space = spaces.Discrete(num_machines)
-        # Example: observation space is a box with the state size
-        self.observation_space = spaces.Box(low=0, high=np.inf, shape=(4,), dtype=np.float32)
+        self.action_space = spaces.Discrete(len(scheduling_rules))
 
-    def reset(self):
-        # Reset the state of the environment to an initial state
+        # Internal state
+        self.env: simpy.Environment | None = None
+        self.processable_jobs: list[Order] = []
+        self.uncompleted_jobs: list[Order] = []
+        self.machines: list[RealMachine] = []
+        self.state: np.ndarray | None = None
+        self.last_reward: float = 0.0
+
+    def reset(self) -> np.ndarray:
+        # Initialize SimPy environment and components
         self.env = simpy.Environment()
         self.processable_jobs = []
-        self.state = np.zeros(4)
         self.uncompleted_jobs = []
-        self.num_op_exceuted = 0
-        self.schedule = pd.DataFrame(columns=['Time', 'Machine', 'Task', 'Points'])
-        self.jobs_completed = 0
-        self.deliverred_rewards = []
-        self.end_time = 0
+        self.last_reward = 0.0
 
-        # Reset machines
+        # Create machines
         self.machines = []
-        for i in range(len(self.machines)):
-            newMachine = RealMachine(
+        for i in range(self.num_machines):
+            m = RealMachine(
                 jobshop_env=self.env,
-                name='agent-' + str(len(self.machines) + 1),
+                name=f'agent-{i+1}',
                 capacity=1,
-                id_color=COLORS[len(self.machines)]
+                id_color=COLORS[i]
             )
-            self.machines.append(newMachine)
+            self.machines.append(m)
 
+        # Schedule job arrivals
+        self.env.process(self._generate_jobs())
+
+        # Compute initial observation
+        self.state = self.state_calculator.calculate_state_features(
+            self.uncompleted_jobs, self.machines
+        )
+        # Define obs space based on state vector length
+        obs_len = len(self.state)
+        self.observation_space = spaces.Box(
+            low=0.0, high=np.inf, shape=(obs_len,), dtype=np.float32
+        )
         return self.state
 
-    def step(self, action):
-        # Execute one time step within the environment
-        # For simplicity, assume action is the index of the machine to process the next job
-        if len(self.processable_jobs) == 0:
-            done = True
-            reward = 0
-        else:
-            selected_machine = self.machines[action]
-            selected_job = self.processable_jobs.pop(0)
-            self.env.process(self.job_process(selected_machine, selected_job, action))
-            self.env.run(until=self.env.now + 1)  # Run the simulation for one time step
-            reward = selected_job.last_task_reward
-            done = self.calculate_done()
+    def step(self, action: int):
+        # Dispatch a job if available
+        if self.processable_jobs:
+            rule_fn = scheduling_rules[action]
+            job, machine = rule_fn(self.processable_jobs, self.machines)
+            self.processable_jobs.remove(job)
+            # Launch processing
+            self.env.process(self._job_process(machine, job))
 
-        self.state = self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
-        return self.state, reward, done, {}
+        # Advance simulation to next event or until max_time
+        if self.env.now < self.max_time:
+            # Step one event
+            self.env.step()
+
+        # Compute next observation
+        obs = self.state_calculator.calculate_state_features(
+            self.uncompleted_jobs, self.machines
+        )
+        self.state = obs
+
+        # Reward is accumulated from last process
+        reward = self.last_reward
+        self.last_reward = 0.0
+
+        # Done if time or jobs exhausted
+        done = (self.env.now >= self.max_time) or (not self.uncompleted_jobs)
+        info = {}
+        return obs, reward, done, info
 
     def render(self, mode='human'):
-        # Render the environment to the screen
-        print(f"Current state: {self.state}")
+        assert self.env is not None
+        print(f"Time={self.env.now:.1f}")
+        for m in self.machines:
+            busy = len(m.queue.users) > 0
+            status = f"busy[{m.queue.users[0].job_name}]" if busy else "idle"
+            print(f"  Machine {m.name}: {status}")
 
-    def job_process(self, machine: Machine, job: Order, policy):
-        next_op = job.get_next_operation()
-        with machine.queue.request() as request:
-            yield request
-            yield self.env.process(machine.process_job(job))
-            if not job.get_completed():
-                self.processable_jobs.append(job)
-
-            self.num_op_exceuted += 1
-            prev_state = self.state
-            self.state = self.state_calculator.calculate_state_features(self.uncompleted_jobs, self.machines)
-            reward = job.last_task_reward
-
-            if job.get_completed():
-                self.jobs_completed += 1
-                self.deliverred_rewards.append(job.last_task_reward)
-
-            self.rewards.append(reward)
-            self.schedule = pd.concat([self.schedule, pd.DataFrame([[job.last_task_completion_timestamp, machine.name, str(next_op), reward]], columns=self.schedule.columns)], axis=0, ignore_index=True)
-            self.scheduler.observation(prev_state, policy, reward, self.state, self.calculate_done())
-            self.reschedule()
-
-    def reschedule(self):
-        if len(self.processable_jobs) > 0:
-            policy = self.scheduler.choose_action(self.state)
-            scheduling_rule = scheduling_rules[policy]
-            selected_job, selected_machine = scheduling_rule(self.processable_jobs, self.machines)
-            self.processable_jobs.remove(selected_job)
-            self.env.process(self.job_process(selected_machine, selected_job, policy))
-
-    def generate_jobs(self):
-        for order in self.globalschedule:
+    def _generate_jobs(self):
+        # Inject jobs based on global schedule
+        for order in self.global_schedule:
             yield self.env.timeout(order.queued_at - self.env.now)
-            job_name = order.full_name
-            order2 = copy.deepcopy(order)
-            self.processable_jobs.append(order2)
-            self.uncompleted_jobs.append(order2)
-            print(f"{self.env.now:.2f}: {job_name} arrived")
-            self.reschedule()
+            job_copy = copy.deepcopy(order)
+            self.processable_jobs.append(job_copy)
+            self.uncompleted_jobs.append(job_copy)
 
-    def calculate_done(self):
-        if self.env.now == self.end_time:
-            return True
-        return False
+    def _job_process(self, machine: RealMachine, job: Order):
+        # SimPy routine for processing a job
+        with machine.queue.request() as req:
+            yield req
+            # Actual processing
+            yield self.env.process(machine.process_job(job))
+            # Collect reward
+            self.last_reward += job.last_task_reward
+            # Update job queues
+            if job.get_completed():
+                self.uncompleted_jobs.remove(job)
+            else:
+                self.processable_jobs.append(job)
