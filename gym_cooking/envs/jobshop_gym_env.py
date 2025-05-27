@@ -9,14 +9,6 @@ from schedulingrules import scheduling_rules
 from utils.agent import RealMachine, COLORS
 
 class JobShopEnv(gym.Env):
-    """
-    OpenAI Gym environment wrapping a SimPy-based job-shop using predefined dispatching rules.
-
-    - Action space: select one of the dispatching rules (0–3)
-    - Observation: feature vector from StateCalculator
-    - Reward: sum of last task rewards per step
-    - Terminates when all jobs done or max_time reached
-    """
     metadata = {'render.modes': ['human']}
 
     def __init__(self, global_schedule: list[Order], num_machines: int,max_time: int = 1200000):
@@ -35,13 +27,18 @@ class JobShopEnv(gym.Env):
         self.env: simpy.Environment | None = None
         self.processable_jobs: list[Order] = []
         self.uncompleted_jobs: list[Order] = []
+        self.num_operations_executed: int = 0
+        self.jobs_completed: int = 0
+        self._previous_num_operations_executed: int = 0
         self.machines: list[RealMachine] = []
         self.state: np.ndarray | None = None
         self.last_reward: float = 0.0
+        self._all_jobs_generated_from_schedule: bool = False
 
     def reset(self) -> np.ndarray:
         # Initialize SimPy environment and components
         self.env = simpy.Environment()
+        self._all_jobs_generated_from_schedule = False
         self.processable_jobs = []
         self.uncompleted_jobs = []
         self.last_reward = 0.0
@@ -58,7 +55,12 @@ class JobShopEnv(gym.Env):
             self.machines.append(m)
 
         # Schedule job arrivals
+        self.num_operations_executed = 0
+        self._previous_num_operations_executed = 0
+        self.jobs_completed = 0
         self.env.process(self._generate_jobs())
+        # Process any initial events, like t=0 job arrivals, so state is accurate
+        self.env.step()
 
         # Compute initial observation
         self.state = self.state_calculator.calculate_state_features(
@@ -85,20 +87,30 @@ class JobShopEnv(gym.Env):
             # Step one event
             self.env.step()
 
-        # Compute next observation
+        # Compute next observation (self.state is updated by this call)
         obs = self.state_calculator.calculate_state_features(
             self.uncompleted_jobs, self.machines
         )
         self.state = obs
 
-        # Reward is accumulated from last process
-        reward = self.last_reward
+        # Calculate ops for this step
+        ops_this_step = self.num_operations_executed - self._previous_num_operations_executed
+        self._previous_num_operations_executed = self.num_operations_executed
+
+        # Reward is accumulated from job_process calls during this env.step()
+        reward_for_step = self.last_reward
         self.last_reward = 0.0
 
         # Done if time or jobs exhausted
-        done = (self.env.now >= self.max_time) or (not self.uncompleted_jobs)
-        info = {}
-        return obs, reward, done, info
+        # Episode is done if max_time is reached, or if all scheduled jobs have been generated
+        # and all of those jobs are now completed.
+        done = (self.env.now >= self.max_time) or \
+               (self._all_jobs_generated_from_schedule and not self.uncompleted_jobs)
+
+        info = {'jobs_completed': self.jobs_completed,
+                'num_ops': ops_this_step, # Operations executed in this specific step
+                'last_reward': reward_for_step} # For potential debugging or detailed logging
+        return obs, reward_for_step, done, info
 
     def render(self, mode='human'):
         assert self.env is not None
@@ -115,6 +127,8 @@ class JobShopEnv(gym.Env):
             job_copy = copy.deepcopy(order)
             self.processable_jobs.append(job_copy)
             self.uncompleted_jobs.append(job_copy)
+        # All jobs from the schedule have been generated
+        self._all_jobs_generated_from_schedule = True
 
     def _job_process(self, machine: RealMachine, job: Order):
         # SimPy routine for processing a job
@@ -122,10 +136,12 @@ class JobShopEnv(gym.Env):
             yield req
             # Actual processing
             yield self.env.process(machine.process_job(job))
+            self.num_operations_executed += 1
             # Collect reward
             self.last_reward += job.last_task_reward
             # Update job queues
             if job.get_completed():
                 self.uncompleted_jobs.remove(job)
+                self.jobs_completed += 1
             else:
                 self.processable_jobs.append(job)
