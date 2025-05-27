@@ -12,9 +12,9 @@ from ddqnscheduler.scheduler import SchedulingAgent as Scheduler
 from ddqnscheduler.parameter import *
 from schedulingrules import *
 
+
 import utils.utils as utils
 import parsers as parsers
-
 
 import gymnasium as gym
 from gymnasium.envs.registration import register
@@ -202,22 +202,14 @@ def train_loop_test(arglist):
         total_reward = 0.0
         num_ops = 0
         num_jobs_done = 0
-
-        # run one episode
         while not done:
-            env.env.process(env._generate_jobs())
-            # 1) agent picks an action
             action = scheduler.choose_action(state)
-
-            # 2) step the env
             next_state, reward, done, info = env.step(action)
-
-            # 3) store transition & accumulate reward
             scheduler.observation(state, action, reward, next_state, done)
             total_reward += reward
 
             # update counters if you added these to your env
-            num_ops += info.get('num_ops', 1)
+            num_ops += info.get('num_ops', 0)
             num_jobs_done = info.get('jobs_completed', num_jobs_done)
 
             state = next_state
@@ -250,8 +242,8 @@ def train_loop_test(arglist):
             ]], columns=log.columns)
         ], ignore_index=True)
 
-        if episode % 100 == 0:  # or whatever frequency
-            print(log.tail(1))
+        if episode % 100 == 0: 
+            print(log.tail(10))
 
         log.to_csv(f"./logs/train_log/log-[{MAX_EPISODE}].csv", index=False)
 
