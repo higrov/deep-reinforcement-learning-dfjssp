@@ -78,9 +78,10 @@ class GamePlay(Game):
 bunLettuceTomato = [Get('Lettuce'),Chop('Lettuce'),Merge('Lettuce','Plate'),Get('Tomato'),Chop('Tomato'),
         Merge('Tomato','Lettuce-Plate'),Get('Bun'),Merge('Bun','Lettuce-Plate-Tomato'), Deliver('Bun-Lettuce-Plate-Tomato')]
 
-burger = [Get('Lettuce'),Chop('Lettuce'),Merge('Lettuce','Plate'),
-          Get('Tomato'),Chop('Tomato'),Merge('Tomato','Lettuce-Plate'),
-          Get('Meat'), Grill('Meat'),Merge('Meat','Lettuce-Plate-Tomato'),
-          Get('Bun'), Merge('Bun','Lettuce-Meat-Plate-Tomato'), 
-          Deliver('Bun-Lettuce-Meat-Plate-Tomato')]
+burger = [Get("Plate"), Get("Plate"), Get("Plate"), Get("Plate"), Get("Lettuce"),Get("Bun"),Get("Lettuce"),Get("Lettuce"),Chop("Lettuce"),Chop("Lettuce"),
+Merge("Bun", "Plate"),Merge("Lettuce", "Plate"),Chop("Lettuce"),Get("Plate"),Merge("Lettuce", "Plate"),Deliver("Bun-Plate"),Get("Tomato"),Chop("Tomato"),Merge("Lettuce", "Plate"),
+Get("Lettuce"),Get("Tomato"),Get("Plate"),Chop("Tomato"),Merge("Tomato", "Lettuce-Plate"),Get("Tomato"),Chop("Lettuce"),Get("Lettuce"),Get("Plate"),Get("Lettuce"),Merge("Tomato", "Lettuce-Plate"),
+Chop("Lettuce"),Get("Bun"),Chop("Tomato"),Merge("Lettuce", "Plate"),Get("Tomato"),Chop("Lettuce"),Chop("Tomato"),Get("Bun"),Merge("Lettuce", "Plate"),Merge("Bun", "Lettuce-Plate-Tomato"),
+Merge("Tomato", "Lettuce-Plate"),Get("Bun"),Merge("Lettuce", "Plate"),Merge("Tomato", "Lettuce-Plate"),Merge("Bun", "Lettuce-Plate-Tomato"),Get("Plate"),Get("Bun"),Get("Plate"),Deliver("Bun-Lettuce-Plate-Tomato"),
+Get("Bun"),Deliver("Bun-Lettuce-Plate-Tomato"),Merge("Bun", "Lettuce-Plate-Tomato"),Get("Plate"),Get("Tomato"),Deliver("Bun-Lettuce-Plate-Tomato"),Get("Bun"),Merge("Bun", "Plate"),Get("Lettuce")]
 
