@@ -1,0 +1,31 @@
+# RunInfo:
+run-id: JS_Test_DDQN_4M_DefaultSeed # Descriptive run ID
+continue-run: false
+notes: "JobShop: Test DDQN model with 4 machines, default seed"
+tags: JobShop, Test, DDQN, 4Machines
+
+# Environment:
+num-agents: 4 # This will be used as num_machines for JobShopEnv
+max-num-timesteps: 1200000 # Max simulation time for an episode
+seed: 1
+device: cuda # or cpu
+
+# Environment Switches (less relevant for JobShop but part of parser)
+record: false
+randomize: false # Not directly used by JobShopEnv
+level: jobshop_default # Placeholder, JobShopEnv uses global_schedule
+num-orders: 10 # Placeholder, driven by global_schedule
+max-num-subtasks: 20 # Placeholder
+
+# Mode:
+play: false
+train: false
+evaluate: false
+test: true
+
+# Files for JobShop
+model_filename: ddqn_model.h5 # Pre-trained model to load for testing
+
+# schedule_filename is parsed but not currently used by JobShopEnv in main.py
+# to load an input schedule. Output log names are generated dynamically.
+schedule_filename: not_used_for_input_schedule

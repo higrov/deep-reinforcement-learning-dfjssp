@@ -1,0 +1,35 @@
+# RunInfo:
+run-id: JS_Train_DDQN_4M_Initial
+continue-run: false # Set to true and specify run-id if resuming
+notes: "JobShop: Initial training run with 4 machines"
+tags: JobShop, Train, DDQN, 4Machines
+
+# Environment:
+num-agents: 4 # This will be used as num_machines
+max-num-timesteps: 1200000 # Max simulation time for an episode in JobShopEnv
+seed: 123
+device: cuda
+
+# Environment Switches
+record: false
+randomize: false
+level: jobshop_default
+num-orders: 10
+max-num-subtasks: 20
+
+# Mode:
+play: false
+train: true # Enable training mode
+evaluate: false
+test: false
+
+# Files for JobShop
+# model_filename will be used for saving the trained model in train_loop
+model_filename: trained_ddqn_jobshop_4m.h5
+
+# schedule_filename is parsed but not currently used by JobShopEnv in main.py
+# to load an input schedule. Output log names are generated dynamically.
+schedule_filename: not_used_for_input_schedule
+
+# Potentially add training-specific hyperparameters here if your parser/main.py supports them
+# e.g., learning_rate, batch_size, MAX_EPISODE (if moved from ddqnscheduler.parameter)
