@@ -169,7 +169,7 @@ class OvercookedEnvironment(gym.Env):
             self.default_world = World()
             x = 0
             y = 0
-            with open(f"utils/levels/{level}.txt", "r") as file:
+            with open(f"./utils/levels/{level}.txt", "r") as file:
                 # Mark the phases of reading.
                 phase = 1
                 for line in file:
