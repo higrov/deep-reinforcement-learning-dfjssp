@@ -1,4 +1,3 @@
 from envs.overcooked_environment import OvercookedEnvironment
-from envs.lean_overcooked_environment import LeanOvercookedEnvironment
-from envs.observation_helpers import ObservationHelpers
-from envs.reward_helpers import RewardHelpers
+from envs.jobshop_env import JobShop
+from envs.jobshop_gym_env import JobShopEnv

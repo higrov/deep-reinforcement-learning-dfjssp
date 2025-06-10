@@ -1,0 +1,31 @@
+# command: python main.py --config evaluation/1x3
+# RunInfo:
+run-id: DDQN-4x1 # for identifying in logs and in folders etc
+continue-run: false # continue training from previous run
+notes: Benchmarking DDQN 
+tags: Paper-4x1 # comma separated list of tags for this run
+
+# Environment:
+# level_types = (open-divider, partial-divider, full-divider, cross-divider, block-divider, ring-divider)
+level: open-divider_salad 
+# partial-divider_salad, full-divider, block-divider_salad, ring-divider_salad, cross-divider_layout, open-divider_onion-salad, block-divider_onion-salad  # level file txt
+num-agents: 4
+num-orders: 7
+max-num-timesteps: 1200000 # quit after this many timesteps
+max-num-subtasks: 14
+seed: 1
+device: cuda
+# Environment Switches
+record: true
+randomize: false
+
+# Mode:
+play: true
+train: false
+evaluate: false
+test: false
+
+#schedule File 
+schedule_filename : max_reward_schedule_test
+
+model_filename : ddqn_model.h5

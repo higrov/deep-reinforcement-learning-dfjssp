@@ -4,6 +4,7 @@ from utils.core import Order
 
 # Define the machines in the job shop
 class Machine:
+    # Define the possible operations and their processing times
     possible_operations = {Get: 5, Merge: 2, Chop: 1, Deliver: 5}
     def __init__(self, env, name, capacity):
         self.env = env

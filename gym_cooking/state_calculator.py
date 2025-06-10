@@ -23,6 +23,9 @@ class StateCalculator:
         machine_util = 0
         num_machines = len(list_machines)
 
+        if len(schedule) == 0:
+            return 0
+        
         for machine in list_machines:
             job_util = 0
             for job in schedule:
@@ -63,7 +66,8 @@ class StateCalculator:
                 if Tleft + Tcur < job.delivery_window[0]:
                     NJearly+= 1
 
-
+        if len(schedule) == 0:
+            return 0
         Ete = (NJearly+NJtard) / len(schedule)
 
         print("Number of estimated early Jobs: ", NJearly)
@@ -94,7 +98,8 @@ class StateCalculator:
                         
                     if last_completed_task_timestamp +Tleft < job.delivery_window[0]:
                         NJa_early += 1
-
+        if len(schedule) == 0:
+            return 0
         ETa = (NJa_early+NJa_tard)/len(schedule)
         print("Number of actual early Jobs: ", NJa_early)
         print("Number of actual Tardy Jobs: ", NJa_tard)
@@ -106,6 +111,9 @@ class StateCalculator:
         p_num_list = [0]
         p_den_list = [1]
 
+        if len(schedule) == 0:
+            return 0
+        
         for job in schedule:
             if len(job.get_completed_tasks()) < len(job.tasks):
                 Tleft = 0

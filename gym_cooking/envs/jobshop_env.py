@@ -6,7 +6,7 @@ import numpy as np
 from ddqnscheduler.scheduler import SchedulingAgent as Scheduler
 import copy 
 
-from machine import Machine  
+from envs.machine import Machine  
 from utils.agent import RealMachine, COLORS
 from schedulingrules import *
 import pandas as pd
@@ -17,7 +17,7 @@ class JobShop:
         # Define the job shop simulation environment
         self.env = simpy.Environment()
         self.processable_jobs= []
-        self.state = np.zeros(scheduler.n_scheduling_actions) # Initial Production State [0,0,0,0]
+        self.state = np.zeros(scheduler.n_scheduling_actions) 
         self.state_calculator = StateCalculator()
         self.uncompleted_jobs = []
         self.scheduler = scheduler
