@@ -28,6 +28,14 @@ def load_parameters(toml_path: str) -> Dict[str, Any]:
         return _load_toml(f)
 
 
+def load_config(toml_path: str) -> Dict[str, Any]:
+    """Load configuration from a TOML file.
+    
+    Alias for load_parameters for consistency with other modules.
+    """
+    return load_parameters(toml_path)
+
+
 def _parse_simple_toml(content: str) -> Dict[str, Any]:
     """Simple TOML-like parser for basic configs (fallback only).
     

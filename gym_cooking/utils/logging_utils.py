@@ -75,7 +75,7 @@ class MetricsLogger:
         if not self.enable_csv:
             return
             
-        self.csv_file = self.output_dir / f"{self.experiment_name}_episodes.csv"
+        self.csv_file = self.output_dir / "episodes.csv"
         self.csv_writer = None
         self.csv_fieldnames = None
     
@@ -112,7 +112,7 @@ class MetricsLogger:
         
         # Log key metrics to console
         self.logger.info(
-            f"Episode {metrics.episode}: reward={metrics.reward:.3f}, "
+            f"Episode {metrics.episode}: reward={metrics.total_reward:.3f}, "
             f"jobs={metrics.jobs_completed}, ops={metrics.num_operations}"
         )
     
@@ -139,7 +139,7 @@ class MetricsLogger:
         episode = metrics.episode
         
         # Core metrics
-        self.tb_writer.add_scalar('Episode/Reward', metrics.reward, episode)
+        self.tb_writer.add_scalar('Episode/Reward', metrics.total_reward, episode)
         self.tb_writer.add_scalar('Episode/Jobs_Completed', metrics.jobs_completed, episode)
         self.tb_writer.add_scalar('Episode/Num_Operations', metrics.num_operations, episode)
         
@@ -217,7 +217,7 @@ class MetricsLogger:
         
         # Save summary
         if self.enable_json:
-            summary_file = self.output_dir / f"{self.experiment_name}_summary.json"
+            summary_file = self.output_dir / "experiment_summary.json"
             with open(summary_file, 'w') as f:
                 f.write(summary.to_json())
         
@@ -249,6 +249,17 @@ class MetricsLogger:
             json.dump(raw_data, f, indent=2)
         
         self.logger.info(f"Raw metrics saved to: {filepath}")
+    
+    def close(self):
+        """Close all logging resources."""
+        if self.tb_writer:
+            self.tb_writer.close()
+        
+        # Close file handlers
+        for handler in self.logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
+                self.logger.removeHandler(handler)
 
 
 class TimingContext:

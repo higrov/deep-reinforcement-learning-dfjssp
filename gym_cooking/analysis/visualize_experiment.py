@@ -28,7 +28,7 @@ except ImportError:
     PLOTTING_AVAILABLE = False
 
 
-def load_csv_data(csv_path: str) -> Optional[pd.DataFrame]:
+def load_csv_data(csv_path: str) -> Optional[Any]:
     """Load episode data from CSV file."""
     if not PLOTTING_AVAILABLE:
         return None
@@ -46,7 +46,7 @@ def load_csv_data(csv_path: str) -> Optional[pd.DataFrame]:
         return None
 
 
-def plot_learning_curve(df: pd.DataFrame, output_path: Path, window_size: int = 10):
+def plot_learning_curve(df: Any, output_path: Path, window_size: int = 10):
     """Plot learning curve with moving average."""
     if df is None or df.empty:
         return
@@ -84,7 +84,7 @@ def plot_learning_curve(df: pd.DataFrame, output_path: Path, window_size: int = 
     print(f"📈 Saved learning curve: {output_path / 'learning_curve.png'}")
 
 
-def plot_performance_metrics(df: pd.DataFrame, output_path: Path):
+def plot_performance_metrics(df: Any, output_path: Path):
     """Plot various performance metrics over time."""
     if df is None or df.empty:
         return
@@ -125,7 +125,7 @@ def plot_performance_metrics(df: pd.DataFrame, output_path: Path):
     print(f"📈 Saved performance metrics: {output_path / 'performance_metrics.png'}")
 
 
-def plot_episode_distribution(df: pd.DataFrame, output_path: Path):
+def plot_episode_distribution(df: Any, output_path: Path):
     """Plot distribution of episode rewards."""
     if df is None or df.empty or 'total_reward' not in df.columns:
         return
@@ -155,7 +155,7 @@ def plot_episode_distribution(df: pd.DataFrame, output_path: Path):
     print(f"📈 Saved reward distribution: {output_path / 'reward_distribution.png'}")
 
 
-def plot_convergence_analysis(df: pd.DataFrame, output_path: Path, window_size: int = 50):
+def plot_convergence_analysis(df: Any, output_path: Path, window_size: int = 50):
     """Analyze convergence of the learning process."""
     if df is None or df.empty or 'total_reward' not in df.columns:
         return

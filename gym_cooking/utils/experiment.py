@@ -20,23 +20,31 @@ class ExperimentTracker:
     """High-level experiment tracking and management."""
     
     def __init__(self, 
-                 config: Dict[str, Any],
+                 experiment_name: str = None,
+                 config: Dict[str, Any] = None,
                  output_dir: str = "./experiments",
                  auto_name: bool = True):
         """
         Initialize experiment tracker.
         
         Args:
+            experiment_name: Name for this experiment
             config: Full experiment configuration
-            output_dir: Base output directory
+            output_dir: Base output directory or full experiment path
             auto_name: Generate automatic experiment name if not provided
         """
-        self.config = config
-        self.base_output_dir = Path(output_dir)
+        self.config = config or {}
         
-        # Generate experiment name
-        self.experiment_name = self._generate_experiment_name(config, auto_name)
-        self.output_dir = self.base_output_dir / self.experiment_name
+        # Handle output directory - can be full path or base path
+        if experiment_name and Path(output_dir).name == experiment_name:
+            # output_dir is already the full experiment path
+            self.output_dir = Path(output_dir)
+            self.experiment_name = experiment_name
+        else:
+            # Traditional usage - construct experiment path
+            self.base_output_dir = Path(output_dir)
+            self.experiment_name = experiment_name or self._generate_experiment_name(self.config, auto_name)
+            self.output_dir = self.base_output_dir / self.experiment_name
         
         # Initialize logger based on config
         logging_config = config.get('logging', {})
@@ -79,30 +87,34 @@ class ExperimentTracker:
             json.dump(self.config, f, indent=2)
     
     def log_episode(self, 
-                   reward: float,
-                   num_operations: int,
-                   jobs_completed: int,
+                   metrics_or_reward,
+                   num_operations: int = None,
+                   jobs_completed: int = None,
                    **kwargs) -> EpisodeMetrics:
         """
         Log metrics for a single episode.
         
         Args:
-            reward: Episode reward
-            num_operations: Number of operations executed
-            jobs_completed: Number of jobs completed
+            metrics_or_reward: Either EpisodeMetrics object or reward value
+            num_operations: Number of operations executed (if reward provided)
+            jobs_completed: Number of jobs completed (if reward provided)
             **kwargs: Additional metrics (epsilon, loss, execution_time, etc.)
         
         Returns:
             EpisodeMetrics object that was logged
         """
-        # Create metrics object
-        metrics = EpisodeMetrics(
-            episode=self.current_episode,
-            reward=reward,
-            num_operations=num_operations,
-            jobs_completed=jobs_completed,
-            **kwargs
-        )
+        # Handle both EpisodeMetrics objects and raw values
+        if isinstance(metrics_or_reward, EpisodeMetrics):
+            metrics = metrics_or_reward
+        else:
+            # Create metrics object from raw values
+            metrics = EpisodeMetrics(
+                episode=self.current_episode,
+                reward=metrics_or_reward,
+                num_operations=num_operations,
+                jobs_completed=jobs_completed,
+                **kwargs
+            )
         
         # Log to underlying logger
         self.logger.log_episode(metrics)
@@ -127,6 +139,14 @@ class ExperimentTracker:
     def time_episode(self) -> TimingContext:
         """Context manager for timing episodes."""
         return TimingContext()
+    
+    def time_experiment(self) -> TimingContext:
+        """Context manager for timing the entire experiment."""
+        return TimingContext()
+    
+    def finalize_experiment(self) -> ExperimentSummary:
+        """Finalize experiment and return summary."""
+        return self.finalize()
     
     def finalize(self) -> ExperimentSummary:
         """Finalize experiment and return summary."""
