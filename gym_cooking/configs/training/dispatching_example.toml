@@ -1,0 +1,16 @@
+# Minimal example config to run a fixed dispatching rule via run_experiment.py
+
+[env]
+# You must programmatically provide global_schedule before calling run_method,
+# or adapt your pipeline to populate it. This placeholder indicates expected keys.
+# In practice, build the schedule with ScheduleGenerator or a fixture.
+num_machines = 4
+max_time = 1200000
+
+[method]
+name = "dispatching"
+[method.config]
+rule_index = 0  # choose one of the existing scheduling_rules
+
+[mode]
+# set globally in CLI; left here for reference

@@ -1,0 +1,12 @@
+# Random baseline policy config
+
+[env]
+num_machines = 4
+max_time = 1200000
+
+[method]
+name = "random"
+[method.config]
+max_steps = 10000  # optional: limit episode length
+
+mode = "eval"

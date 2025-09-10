@@ -1,0 +1,26 @@
+# DDQN training configuration template
+# Note: global_schedule must be provided programmatically
+
+[env]
+num_machines = 4
+max_time = 1200000
+
+[method]
+name = "ddqn"
+[method.config]
+nb_input_params = 4
+nb_actions = 4
+learning_rate = 0.0005
+epsilon_start = 1.0
+epsilon_end = 0.05
+epsilon_decay = 0.9995
+
+[training]
+episodes = 50000
+eval_every = 10000
+save_model_every = 10000
+log_dir = "./logs"
+model_dir = "./models/pretrained/DDQN/trained"
+seed = 42
+
+mode = "train"
