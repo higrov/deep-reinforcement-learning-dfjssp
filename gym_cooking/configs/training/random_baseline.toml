@@ -1,4 +1,4 @@
-# Random baseline policy config
+# Random baseline policy config with metrics logging
 
 [env]
 num_machines = 4
@@ -7,6 +7,22 @@ max_time = 1200000
 [method]
 name = "random"
 [method.config]
-max_steps = 10000  # optional: limit episode length
+max_steps = 5000    # optional: limit episode length
+episodes = 20       # run multiple episodes
+use_metrics = true  # enable metrics logging
+
+# Logging configuration
+[logging]
+output_dir = "./experiments"
+experiment_name = "random_baseline_evaluation"
+auto_name = false
+
+# Output formats
+save_csv = true
+save_json = true
+save_tensorboard = true
+
+# Summary statistics
+summary_every = 10  # Log summary stats every 10 episodes
 
 mode = "eval"

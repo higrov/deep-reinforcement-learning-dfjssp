@@ -1,4 +1,4 @@
-# Minimal example config to run a fixed dispatching rule via run_experiment.py
+# Example config for dispatching rule with metrics logging
 
 [env]
 # You must programmatically provide global_schedule before calling run_method,
@@ -11,6 +11,21 @@ max_time = 1200000
 name = "dispatching"
 [method.config]
 rule_index = 0  # choose one of the existing scheduling_rules
+episodes = 10   # run multiple episodes for better statistics
+use_metrics = true  # enable metrics logging
 
-[mode]
-# set globally in CLI; left here for reference
+# Logging configuration
+[logging]
+output_dir = "./experiments"
+experiment_name = "dispatching_rule_comparison"  # or leave empty for auto-generation
+auto_name = false
+
+# Output formats
+save_csv = true
+save_json = true
+save_tensorboard = true  # Enable TensorBoard for visualization
+
+# Summary statistics
+summary_every = 5  # Log summary stats every 5 episodes
+
+mode = "eval"

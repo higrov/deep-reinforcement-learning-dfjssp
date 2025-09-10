@@ -1,0 +1,18 @@
+# Research-grade logging configuration
+# Full logging with TensorBoard for detailed analysis
+
+[logging]
+output_dir = "./experiments"
+experiment_name = ""  # Auto-generated based on method and timestamp
+auto_name = true
+
+# Output formats (enable all)
+save_csv = true
+save_json = true
+save_tensorboard = true
+
+# Summary statistics
+summary_every = 100  # Log summary stats every N episodes
+
+# TensorBoard settings
+tensorboard_dir = "./tensorboard_logs"
