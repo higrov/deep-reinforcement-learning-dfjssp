@@ -1,0 +1,12 @@
+[project]
+name = "gym-cooking"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "networkx>=3.5",
+    "setuptools>=80.9.0",
+    "simpy==4.0.2",
+    "tomli>=2.2.1",
+]
