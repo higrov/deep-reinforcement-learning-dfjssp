@@ -1,7 +1,5 @@
 from typing import Any, Dict, Tuple
 
-from envs.jobshop_gym_env import JobShopEnv
-
 
 def run_method(env_config: Dict[str, Any],
                method: str,
@@ -22,6 +20,9 @@ def run_method(env_config: Dict[str, Any],
         Tuple of (score, info). Score is a scalar (e.g., total reward). Info is a
         dict with optional metadata.
     """
+    # Lazy import to avoid forcing heavy dependencies
+    from envs.jobshop_gym_env import JobShopEnv
+    
     env = JobShopEnv(
         global_schedule=env_config["global_schedule"],
         num_machines=env_config.get("num_machines", 4),

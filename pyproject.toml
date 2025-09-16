@@ -1,12 +1,80 @@
 [project]
 name = "gym-cooking"
 version = "0.1.0"
-description = "Add your description here"
+description = "Multi-agent kitchen and job shop scheduling environments"
 readme = "README.md"
 requires-python = ">=3.12"
+# Core dependencies - minimal set for basic functionality
 dependencies = [
+    "tomli>=2.2.1", # TOML configuration loading
+    "setuptools>=80.9.0", # For package resources
+    "pyyaml>=6.0.2", # YAML configuration support
+    "termcolor>=3.1.0",
+    "pymongo>=4.15.0",
     "networkx>=3.5",
-    "setuptools>=80.9.0",
+    "matplotlib>=3.10.6",
+    "pygame>=2.6.1",
+]
+
+[project.optional-dependencies]
+# Job shop scheduling dependencies
+jobshop = [
+    "simpy==4.0.2",  # Discrete event simulation
+    "gymnasium>=1.2.0",  # RL environment interface
+    "numpy>=2.3.3",  # Numerical computations
+    "networkx>=3.5",  # Graph algorithms (needed by some components)
+    "scikit-learn>=1.7.2",  # ML utilities
+    "termcolor>=3.1.0",  # Colored terminal output
+    "pymongo>=4.15.0",  # MongoDB integration
+]
+
+# Overcooked kitchen simulation dependencies
+overcooked = [
+    "gymnasium>=1.2.0",  # RL environment interface
+    "numpy>=2.3.3",  # Numerical computations
+    "networkx>=3.5",  # Graph algorithms
+    "pygame>=2.6.1",  # Game visualization
+    "matplotlib>=3.10.6",  # Plotting
+]
+
+# Deep learning dependencies
+deeprl = [
+    "torch>=2.8.0",  # Deep learning framework
+    "tensorboard>=2.20.0",  # Experiment tracking
+]
+
+# Analysis and visualization dependencies
+analysis = [
+    "pandas>=2.3.2",  # Data analysis
+    "matplotlib>=3.10.6",  # Plotting
+    "scipy>=1.16.2",  # Scientific computing
+]
+
+# Interactive visualization dependencies
+visualization = [
+    "pygame>=2.6.1",  # Real-time schedule visualization
+    "matplotlib>=3.10.6",  # Static plotting
+    "numpy>=2.3.3",  # Numerical computations
+]
+
+# Development dependencies
+dev = [
+    "pytest>=7.0.0",  # Testing framework
+    "black>=22.0.0",  # Code formatting
+    "flake8>=4.0.0",  # Linting
+]
+
+# Complete installation (all features)
+all = [
     "simpy==4.0.2",
-    "tomli>=2.2.1",
+    "gymnasium>=1.2.0",
+    "numpy>=2.3.3",
+    "networkx>=3.5",
+    "pygame>=2.6.1",
+    "matplotlib>=3.10.6",
+    "torch>=2.8.0",
+    "tensorboard>=2.20.0",
+    "pandas>=2.3.2",
+    "scipy>=1.16.2",
+    "scikit-learn>=1.7.2",
 ]
